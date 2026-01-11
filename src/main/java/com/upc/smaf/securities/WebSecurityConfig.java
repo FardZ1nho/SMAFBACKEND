@@ -61,7 +61,14 @@ public class WebSecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:4200")); // URL de Angular
+
+        // ⭐ Agregar AMBAS URLs: localhost Y Vercel
+        configuration.setAllowedOrigins(Arrays.asList(
+                "http://localhost:4200",           // Para desarrollo local
+                "https://smaffrontend.vercel.app", // ⭐ Tu frontend en Vercel
+                "https://*.vercel.app"              // ⭐ Para preview deployments
+        ));
+
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
