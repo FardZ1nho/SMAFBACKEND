@@ -57,16 +57,14 @@ public class WebSecurityConfig {
         auth.userDetailsService(jwtUserDetailsService).passwordEncoder(passwordEncoder());
     }
 
-    // ⭐⭐ NUEVO: Configuración de CORS ⭐⭐
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ⭐ Agregar AMBAS URLs: localhost Y Vercel
         configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:4200",           // Para desarrollo local
-                "https://smaffrontend.vercel.app", // ⭐ Tu frontend en Vercel
-                "https://*.vercel.app"              // ⭐ Para preview deployments
+                "http://localhost:4200",
+                "https://smaffrontend.vercel.app",
+                "https://*.vercel.app"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
