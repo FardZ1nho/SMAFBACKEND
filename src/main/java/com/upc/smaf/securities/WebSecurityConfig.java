@@ -61,13 +61,13 @@ public class WebSecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(Arrays.asList(
+        // ⭐ CAMBIO CLAVE: Usar setAllowedOriginPatterns en lugar de setAllowedOrigins
+        configuration.setAllowedOriginPatterns(Arrays.asList(
                 "http://localhost:4200",
-                "https://smaffrontend.vercel.app",
-                "https://*.vercel.app"
+                "https://*.vercel.app"  // ⭐ Ahora SÍ funciona el wildcard
         ));
 
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
@@ -83,10 +83,11 @@ public class WebSecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(req -> req
-                        // ⭐ ORDEN CORRECTO: Más específico primero
                         .requestMatchers("/login").permitAll()
                         .requestMatchers("/productos/**").permitAll()
-                        .requestMatchers("/categorias/**").permitAll()  // ⭐ Asegurar que esté aquí
+                        .requestMatchers("/categorias/**").permitAll()
+                        .requestMatchers("/dashboard/**").permitAll()  // ⭐ Agregar dashboard
+                        .requestMatchers("/clientes/**").permitAll()    // ⭐ Si necesitas clientes públicos
                         .requestMatchers("/uploads/**").permitAll()
                         .anyRequest().authenticated()
                 )
