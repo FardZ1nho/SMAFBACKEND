@@ -5,5 +5,6 @@ public enum MetodoPago {
     TARJETA,
     TRANSFERENCIA,
     YAPE,
-    PLIN
+    PLIN,
+    MIXTO,
 }

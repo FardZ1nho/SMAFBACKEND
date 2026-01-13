@@ -17,7 +17,17 @@ public class VentaResponseDTO {
     private LocalDateTime fechaVenta;
     private String nombreCliente;
     private TipoCliente tipoCliente;
+
     private MetodoPago metodoPago;
+
+    // ✅ NUEVO: Campos para detallar el pago mixto
+    private BigDecimal pagoEfectivo;
+    private BigDecimal pagoTransferencia;
+
+    // ✅ NUEVO: Campos para moneda y cambio
+    private String moneda;
+    private BigDecimal tipoCambio;
+
     private BigDecimal subtotal;
     private BigDecimal igv;
     private BigDecimal total;

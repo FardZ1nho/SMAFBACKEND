@@ -9,7 +9,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-
 @Entity
 @Table(name = "ventas")
 @Data
@@ -22,27 +21,42 @@ public class Venta {
     private Integer id;
 
     @Column(nullable = false, unique = true, length = 20)
-    private String codigo; // Ej: VTA-2025-0001
+    private String codigo;
 
     @Column(name = "fecha_venta", nullable = false)
     private LocalDateTime fechaVenta;
 
+    // ... (Tu relación con Cliente si la tienes, o nombre_cliente) ...
     @Column(name = "nombre_cliente", length = 100)
     private String nombreCliente;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_cliente", nullable = false)
-    private TipoCliente tipoCliente; // COMUN, MAYORISTA, DISTRIBUIDOR
+    private TipoCliente tipoCliente;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "metodo_pago", nullable = false)
-    private MetodoPago metodoPago; // EFECTIVO, TARJETA, TRANSFERENCIA, YAPE, PLIN
+    private MetodoPago metodoPago;
+
+    // ✅ NUEVO: Columnas para Pago Mixto
+    @Column(name = "pago_efectivo", precision = 10, scale = 2)
+    private BigDecimal pagoEfectivo;
+
+    @Column(name = "pago_transferencia", precision = 10, scale = 2)
+    private BigDecimal pagoTransferencia;
+
+    // ✅ NUEVO: Columnas para Moneda y TC (Faltaban en tu Entity)
+    @Column(length = 3)
+    private String moneda; // PEN, USD
+
+    @Column(name = "tipo_cambio", precision = 10, scale = 4) // Scale 4 para mejor precisión en TC
+    private BigDecimal tipoCambio;
 
     @Column(precision = 10, scale = 2, nullable = false)
     private BigDecimal subtotal;
 
     @Column(precision = 10, scale = 2, nullable = false)
-    private BigDecimal igv; // 18%
+    private BigDecimal igv;
 
     @Column(precision = 10, scale = 2, nullable = false)
     private BigDecimal total;
@@ -52,7 +66,7 @@ public class Venta {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private EstadoVenta estado; // BORRADOR, COMPLETADA, CANCELADA
+    private EstadoVenta estado;
 
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DetalleVenta> detalles = new ArrayList<>();
@@ -74,7 +88,6 @@ public class Venta {
         fechaActualizacion = LocalDateTime.now();
     }
 
-    // Método helper para agregar detalle
     public void agregarDetalle(DetalleVenta detalle) {
         detalles.add(detalle);
         detalle.setVenta(this);

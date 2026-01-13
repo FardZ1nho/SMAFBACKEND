@@ -6,15 +6,14 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Data
 public class VentaRequestDTO {
-
     private LocalDateTime fechaVenta;
-
-    @Size(max = 100, message = "El nombre del cliente no puede exceder 100 caracteres")
+    private Integer clienteId;
     private String nombreCliente;
 
     @NotNull(message = "El tipo de cliente es requerido")
@@ -22,6 +21,16 @@ public class VentaRequestDTO {
 
     @NotNull(message = "El método de pago es requerido")
     private MetodoPago metodoPago;
+
+    // ✅ NUEVO: Campos para recibir los montos del Pago Mixto
+    private BigDecimal pagoEfectivo;
+    private BigDecimal pagoTransferencia;
+
+    // Para saber en qué moneda se hizo la transacción
+    private String moneda;
+
+    // Para guardar el TC del momento
+    private BigDecimal tipoCambio;
 
     @Size(max = 500, message = "Las notas no pueden exceder 500 caracteres")
     private String notas;
