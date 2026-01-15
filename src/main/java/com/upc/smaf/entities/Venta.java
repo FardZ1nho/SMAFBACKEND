@@ -52,6 +52,13 @@ public class Venta {
     @Column(name = "tipo_cambio", precision = 10, scale = 4) // Scale 4 para mejor precisión en TC
     private BigDecimal tipoCambio;
 
+    // ✅ NUEVO: Tipo de Comprobante (Factura, Boleta) y el Número (F001-123)
+    @Column(name = "tipo_documento", length = 20)
+    private String tipoDocumento;
+
+    @Column(name = "numero_documento", length = 50)
+    private String numeroDocumento;
+
     @Column(precision = 10, scale = 2, nullable = false)
     private BigDecimal subtotal;
 

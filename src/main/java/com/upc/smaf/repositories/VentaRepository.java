@@ -1,13 +1,11 @@
 package com.upc.smaf.repositories;
 
-import com.upc.smaf.dtos.VentasSemanaDTO;
 import com.upc.smaf.entities.Venta;
 import com.upc.smaf.entities.EstadoVenta;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-import com.upc.smaf.dtos.VentasSemanaDTO;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -24,48 +22,53 @@ public interface VentaRepository extends JpaRepository<Venta, Integer> {
     List<Venta> findByFechaVentaBetween(LocalDateTime inicio, LocalDateTime fin);
 
     @Query("SELECT v FROM Venta v WHERE v.nombreCliente LIKE %:nombre%")
-    List<Venta> buscarPorCliente(String nombre);
+    List<Venta> buscarPorCliente(@Param("nombre") String nombre);
 
     @Query("SELECT COUNT(v) FROM Venta v WHERE v.estado = :estado")
-    Long contarPorEstado(EstadoVenta estado);
+    Long contarPorEstado(@Param("estado") EstadoVenta estado);
 
-    // ========== AGREGAR ESTOS MÉTODOS AL FINAL DE VentaRepository ==========
+    // ==========================================
+    // ✅ NUEVOS MÉTODOS AGREGADOS (Para Documentos)
+    // ==========================================
 
-    /**
-     * Suma el total de ventas en un rango de fechas
-     */
+    // Buscar una venta específica por su número de comprobante (Ej: "F001-00025")
+    Optional<Venta> findByNumeroDocumento(String numeroDocumento);
+
+    // Verificar si ya existe un número de documento (Útil para validar duplicados antes de guardar)
+    boolean existsByNumeroDocumento(String numeroDocumento);
+
+    // Filtrar por tipo (Ej: Traer todas las "FACTURA" o "BOLETA")
+    List<Venta> findByTipoDocumento(String tipoDocumento);
+
+    // ==========================================
+    // FIN NUEVOS MÉTODOS
+    // ==========================================
+
+    // ========== ESTADÍSTICAS Y REPORTES ==========
+
     @Query("SELECT COALESCE(SUM(v.total), 0) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin")
-    BigDecimal sumarVentasEntreFechas(LocalDateTime inicio, LocalDateTime fin);
+    BigDecimal sumarVentasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
-    /**
-     * Cuenta la cantidad de ventas en un rango de fechas
-     */
     @Query("SELECT COUNT(v) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin")
-    Integer contarVentasEntreFechas(LocalDateTime inicio, LocalDateTime fin);
+    Integer contarVentasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
-    /**
-     * Suma el total de ventas completadas en un rango de fechas
-     */
     @Query("SELECT COALESCE(SUM(v.total), 0) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin AND v.estado = 'COMPLETADA'")
-    BigDecimal sumarVentasCompletadasEntreFechas(LocalDateTime inicio, LocalDateTime fin);
+    BigDecimal sumarVentasCompletadasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
-    /**
-     * Cuenta ventas completadas en un rango de fechas
-     */
     @Query("SELECT COUNT(v) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin AND v.estado = 'COMPLETADA'")
-    Integer contarVentasCompletadasEntreFechas(LocalDateTime inicio, LocalDateTime fin);
+    Integer contarVentasCompletadasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
     @Query(value =
             "SELECT " +
                     "   DATE(v.fecha_venta) as fecha, " +
-                    "   TO_CHAR(v.fecha_venta, 'Day') as diaSemana, " + // ✅ Cambiar DAYNAME por TO_CHAR
+                    "   TO_CHAR(v.fecha_venta, 'Day') as diaSemana, " +
                     "   COALESCE(SUM(v.total), 0) as totalVentas, " +
                     "   COUNT(v.id) as cantidadVentas " +
                     "FROM ventas v " +
                     "WHERE v.fecha_venta >= :inicioSemana " +
                     "AND v.fecha_venta < :finSemana " +
                     "AND v.estado = 'COMPLETADA' " +
-                    "GROUP BY DATE(v.fecha_venta), TO_CHAR(v.fecha_venta, 'Day') " + // ✅ Cambiar aquí también
+                    "GROUP BY DATE(v.fecha_venta), TO_CHAR(v.fecha_venta, 'Day') " +
                     "ORDER BY DATE(v.fecha_venta)",
             nativeQuery = true)
     List<Object[]> obtenerVentasPorDiaSemanaRaw(

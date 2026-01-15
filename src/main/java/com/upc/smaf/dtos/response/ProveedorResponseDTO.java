@@ -14,5 +14,8 @@ public class ProveedorResponseDTO {
     private String email;
     private String direccion;
     private Boolean activo;
+
+    // Fechas de auditoría
     private LocalDateTime fechaCreacion;
+    private LocalDateTime fechaActualizacion; // Nuevo campo útil
 }

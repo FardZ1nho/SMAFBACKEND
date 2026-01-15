@@ -32,6 +32,9 @@ public class VentaRequestDTO {
     // Para guardar el TC del momento
     private BigDecimal tipoCambio;
 
+    private String tipoDocumento;
+    private String numeroDocumento;
+
     @Size(max = 500, message = "Las notas no pueden exceder 500 caracteres")
     private String notas;
 

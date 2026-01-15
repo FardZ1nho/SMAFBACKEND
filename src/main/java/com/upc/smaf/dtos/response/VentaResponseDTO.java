@@ -28,6 +28,9 @@ public class VentaResponseDTO {
     private String moneda;
     private BigDecimal tipoCambio;
 
+    private String tipoDocumento;
+    private String numeroDocumento;
+
     private BigDecimal subtotal;
     private BigDecimal igv;
     private BigDecimal total;

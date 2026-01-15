@@ -12,20 +12,15 @@ import java.util.Optional;
 @Repository
 public interface ProveedorRepository extends JpaRepository<Proveedor, Integer> {
 
-    // Listar solo proveedores activos
     List<Proveedor> findByActivoTrue();
 
-    // Buscar por nombre (case insensitive)
     @Query("SELECT p FROM Proveedor p WHERE LOWER(p.nombre) LIKE LOWER(CONCAT('%', :nombre, '%'))")
     List<Proveedor> buscarPorNombre(@Param("nombre") String nombre);
 
-    // Buscar por RUC
     Optional<Proveedor> findByRuc(String ruc);
 
-    // Verificar si existe un RUC (útil para validaciones)
     boolean existsByRuc(String ruc);
 
-    // Buscar proveedores activos por nombre
-    @Query("SELECT p FROM Proveedor p WHERE p.activo = true AND LOWER(p.nombre) LIKE LOWER(CONCAT('%', :nombre, '%'))")
-    List<Proveedor> buscarProveedoresActivosPorNombre(@Param("nombre") String nombre);
+    // MEJORA: Verifica si existe el RUC en CUALQUIER OTRO registro que no sea el actual (ID)
+    boolean existsByRucAndIdNot(String ruc, Integer id);
 }

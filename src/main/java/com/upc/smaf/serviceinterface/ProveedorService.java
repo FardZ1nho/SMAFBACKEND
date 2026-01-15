@@ -6,16 +6,12 @@ import com.upc.smaf.dtos.response.ProveedorResponseDTO;
 import java.util.List;
 
 public interface ProveedorService {
-
-    // CRUD Básico
     ProveedorResponseDTO crearProveedor(ProveedorRequestDTO request);
     ProveedorResponseDTO obtenerProveedor(Integer id);
     List<ProveedorResponseDTO> listarProveedores();
     List<ProveedorResponseDTO> listarProveedoresActivos();
     ProveedorResponseDTO actualizarProveedor(Integer id, ProveedorRequestDTO request);
     void desactivarProveedor(Integer id);
-
-    // Búsqueda
     List<ProveedorResponseDTO> buscarPorNombre(String nombre);
     ProveedorResponseDTO obtenerPorRuc(String ruc);
 }

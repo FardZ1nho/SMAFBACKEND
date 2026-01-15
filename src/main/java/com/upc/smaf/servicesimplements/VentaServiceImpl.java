@@ -6,7 +6,7 @@ import com.upc.smaf.dtos.response.DetalleVentaResponseDTO;
 import com.upc.smaf.dtos.response.VentaResponseDTO;
 import com.upc.smaf.entities.*;
 import com.upc.smaf.entities.EstadoVenta;
-import com.upc.smaf.entities.MetodoPago; // Asegúrate de importar esto
+import com.upc.smaf.entities.MetodoPago;
 import com.upc.smaf.repositories.ProductoRepository;
 import com.upc.smaf.repositories.VentaRepository;
 import com.upc.smaf.serviceinterface.VentaService;
@@ -48,10 +48,10 @@ public class VentaServiceImpl implements VentaService {
         venta.setNotas(request.getNotas());
         venta.setEstado(EstadoVenta.COMPLETADA);
 
-        // ✅ NUEVO: Mapear Pago Mixto y Moneda
-        mapearDatosPago(venta, request);
+        // Mapear Pagos, Moneda y Documentos (Factura, Boleta, Número)
+        mapearDatosPagoYDocumento(venta, request);
 
-        // Procesar productos
+        // Procesar productos (Descontando stock porque es venta completa)
         for (DetalleVentaRequestDTO detalleDTO : request.getDetalles()) {
             procesarDetalleVenta(venta, detalleDTO, true);
         }
@@ -76,8 +76,8 @@ public class VentaServiceImpl implements VentaService {
         venta.setNotas(request.getNotas());
         venta.setEstado(EstadoVenta.BORRADOR);
 
-        // ✅ NUEVO: Mapear Pago Mixto y Moneda (Importante para borradores)
-        mapearDatosPago(venta, request);
+        // Mapear Pagos, Moneda y Documentos
+        mapearDatosPagoYDocumento(venta, request);
 
         // Agregar detalles SIN descontar stock
         if (request.getDetalles() != null && !request.getDetalles().isEmpty()) {
@@ -91,7 +91,7 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaGuardada);
     }
 
-    // ========== CONVERTIR BORRADOR A VENTA ==========
+    // ========== CONVERTIR BORRADOR A VENTA (COMPLETAR) ==========
 
     @Override
     @Transactional
@@ -103,12 +103,17 @@ public class VentaServiceImpl implements VentaService {
             throw new RuntimeException("Solo se pueden completar ventas en estado BORRADOR");
         }
 
-        // Descontar stock
+        // Validar y Descontar stock ahora que se completa
         for (DetalleVenta detalle : venta.getDetalles()) {
             Producto producto = detalle.getProducto();
+
+            // Validación estricta de stock al completar
             if (producto.getStockActual() < detalle.getCantidad()) {
-                throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
+                throw new RuntimeException("Stock insuficiente para: " + producto.getNombre() +
+                        ". Disponible: " + producto.getStockActual() +
+                        ", Solicitado: " + detalle.getCantidad());
             }
+
             producto.setStockActual(producto.getStockActual() - detalle.getCantidad());
             productoRepository.save(producto);
         }
@@ -118,7 +123,7 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaActualizada);
     }
 
-    // ========== ACTUALIZAR VENTA ==========
+    // ========== ACTUALIZAR VENTA (SOLO BORRADORES) ==========
 
     @Override
     @Transactional
@@ -135,10 +140,15 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCliente(request.getTipoCliente());
         venta.setNotas(request.getNotas());
 
-        // ✅ NUEVO: Actualizar Pago Mixto y Moneda
-        mapearDatosPago(venta, request);
+        // Actualizar fecha si viene en el request
+        if(request.getFechaVenta() != null) {
+            venta.setFechaVenta(request.getFechaVenta());
+        }
 
-        // Limpiar y rehacer detalles
+        // Actualizar Pagos, Moneda y Documentos
+        mapearDatosPagoYDocumento(venta, request);
+
+        // Limpiar detalles antiguos y rehacer
         venta.getDetalles().clear();
         if (request.getDetalles() != null) {
             for (DetalleVentaRequestDTO detalleDTO : request.getDetalles()) {
@@ -151,7 +161,7 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaActualizada);
     }
 
-    // ========== MÉTODOS DE LECTURA Y OTROS (Sin Cambios Críticos) ==========
+    // ========== MÉTODOS DE LECTURA Y UTILITARIOS ==========
 
     @Override
     @Transactional
@@ -162,6 +172,8 @@ public class VentaServiceImpl implements VentaService {
         if (venta.getEstado() == EstadoVenta.CANCELADA) {
             throw new RuntimeException("La venta ya está cancelada");
         }
+
+        // Si estaba completada, devolvemos el stock
         if (venta.getEstado() == EstadoVenta.COMPLETADA) {
             for (DetalleVenta detalle : venta.getDetalles()) {
                 Producto producto = detalle.getProducto();
@@ -169,6 +181,7 @@ public class VentaServiceImpl implements VentaService {
                 productoRepository.save(producto);
             }
         }
+
         venta.setEstado(EstadoVenta.CANCELADA);
         ventaRepository.save(venta);
     }
@@ -243,18 +256,21 @@ public class VentaServiceImpl implements VentaService {
     // ========== MÉTODOS AUXILIARES (LÓGICA INTERNA) ==========
 
     /**
-     * ✅ MÉTODO NUEVO: Centraliza la lógica de guardar moneda y pago mixto.
+     * Centraliza la lógica de guardar moneda, pago mixto y los documentos.
      */
-    private void mapearDatosPago(Venta venta, VentaRequestDTO request) {
+    private void mapearDatosPagoYDocumento(Venta venta, VentaRequestDTO request) {
         // 1. Mapear Moneda y TC
         venta.setMoneda(request.getMoneda());
         venta.setTipoCambio(request.getTipoCambio());
         venta.setMetodoPago(request.getMetodoPago());
 
-        // 2. Lógica de Pago Mixto
+        // 2. Mapear Documento (Factura/Boleta y Número)
+        venta.setTipoDocumento(request.getTipoDocumento());
+        venta.setNumeroDocumento(request.getNumeroDocumento());
+
+        // 3. Lógica de Pago Mixto
         if (MetodoPago.MIXTO.equals(request.getMetodoPago())) {
             // Si es mixto, guardamos los valores que vienen del front
-            // Usamos BigDecimal.ZERO si vienen nulos para evitar errores
             venta.setPagoEfectivo(request.getPagoEfectivo() != null ? request.getPagoEfectivo() : BigDecimal.ZERO);
             venta.setPagoTransferencia(request.getPagoTransferencia() != null ? request.getPagoTransferencia() : BigDecimal.ZERO);
         } else {
@@ -314,12 +330,16 @@ public class VentaServiceImpl implements VentaService {
         dto.setNombreCliente(venta.getNombreCliente());
         dto.setTipoCliente(venta.getTipoCliente());
 
-        // ✅ DEVOLVER LOS NUEVOS CAMPOS AL FRONTEND
+        // Campos de Pago y Moneda
         dto.setMetodoPago(venta.getMetodoPago());
-        dto.setPagoEfectivo(venta.getPagoEfectivo());           // <--- Nuevo
-        dto.setPagoTransferencia(venta.getPagoTransferencia()); // <--- Nuevo
-        dto.setMoneda(venta.getMoneda());                       // <--- Nuevo
-        dto.setTipoCambio(venta.getTipoCambio());               // <--- Nuevo
+        dto.setPagoEfectivo(venta.getPagoEfectivo());
+        dto.setPagoTransferencia(venta.getPagoTransferencia());
+        dto.setMoneda(venta.getMoneda());
+        dto.setTipoCambio(venta.getTipoCambio());
+
+        // Campos de Documento
+        dto.setTipoDocumento(venta.getTipoDocumento());
+        dto.setNumeroDocumento(venta.getNumeroDocumento());
 
         dto.setSubtotal(venta.getSubtotal());
         dto.setIgv(venta.getIgv());

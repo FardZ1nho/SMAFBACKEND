@@ -4,6 +4,10 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
 import java.time.LocalDateTime;
 
 @Entity
@@ -11,6 +15,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@EntityListeners(AuditingEntityListener.class) // <--- IMPORTANTE: Activa la auditoría de fechas
 public class Proveedor {
 
     @Id
@@ -20,7 +25,7 @@ public class Proveedor {
     @Column(nullable = false, length = 200)
     private String nombre;
 
-    @Column(length = 11)
+    @Column(length = 11, unique = true)
     private String ruc;
 
     @Column(length = 100)
@@ -38,14 +43,25 @@ public class Proveedor {
     @Column(nullable = false)
     private Boolean activo = true;
 
+    // Se llena solo cuando creas el registro
+    @CreatedDate
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
 
+    // Se llena/actualiza solo cuando editas el registro (ESTO TE FALTABA)
+    @LastModifiedDate
+    @Column(name = "fecha_actualizacion")
+    private LocalDateTime fechaActualizacion;
+
+    // Mantenemos esto solo para asegurar que 'activo' sea true por defecto
     @PrePersist
-    protected void onCreate() {
-        this.fechaCreacion = LocalDateTime.now();
+    protected void onPrePersist() {
         if (this.activo == null) {
             this.activo = true;
+        }
+        // ESTO ES LO QUE FALTABA: Asegurar que la fecha nunca sea null
+        if (this.fechaCreacion == null) {
+            this.fechaCreacion = LocalDateTime.now();
         }
     }
 }

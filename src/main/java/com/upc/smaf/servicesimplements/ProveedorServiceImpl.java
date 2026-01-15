@@ -1,4 +1,4 @@
-package com.upc.smaf.serviceimpl;
+package com.upc.smaf.servicesimplements;
 
 import com.upc.smaf.dtos.request.ProveedorRequestDTO;
 import com.upc.smaf.dtos.response.ProveedorResponseDTO;
@@ -21,21 +21,19 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional
     public ProveedorResponseDTO crearProveedor(ProveedorRequestDTO request) {
-        // Validar RUC único (si se proporciona)
+        // Validar RUC único
         if (request.getRuc() != null && !request.getRuc().isEmpty()) {
             if (proveedorRepository.existsByRuc(request.getRuc())) {
-                throw new RuntimeException("Ya existe un proveedor con el RUC: " + request.getRuc());
+                // Usamos IllegalArgumentException para indicar conflicto de datos
+                throw new IllegalArgumentException("El RUC " + request.getRuc() + " ya se encuentra registrado.");
             }
         }
 
         Proveedor proveedor = new Proveedor();
-        proveedor.setNombre(request.getNombre());
-        proveedor.setRuc(request.getRuc());
-        proveedor.setContacto(request.getContacto());
-        proveedor.setTelefono(request.getTelefono());
-        proveedor.setEmail(request.getEmail());
-        proveedor.setDireccion(request.getDireccion());
-        proveedor.setActivo(request.getActivo() != null ? request.getActivo() : true);
+        mapRequestToEntity(request, proveedor); // Reutilizamos lógica de mapeo
+
+        // Asegurar que nace activo
+        proveedor.setActivo(true);
 
         Proveedor saved = proveedorRepository.save(proveedor);
         return mapToDTO(saved);
@@ -44,8 +42,7 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional(readOnly = true)
     public ProveedorResponseDTO obtenerProveedor(Integer id) {
-        Proveedor proveedor = proveedorRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con ID: " + id));
+        Proveedor proveedor = findByIdInternal(id);
         return mapToDTO(proveedor);
     }
 
@@ -68,25 +65,16 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional
     public ProveedorResponseDTO actualizarProveedor(Integer id, ProveedorRequestDTO request) {
-        Proveedor proveedor = proveedorRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con ID: " + id));
+        Proveedor proveedor = findByIdInternal(id);
 
-        // Validar RUC único si se está cambiando
-        if (request.getRuc() != null && !request.getRuc().equals(proveedor.getRuc())) {
-            if (proveedorRepository.existsByRuc(request.getRuc())) {
-                throw new RuntimeException("Ya existe un proveedor con el RUC: " + request.getRuc());
+        // Validar RUC único EXCLUYENDO al propio proveedor que estamos editando
+        if (request.getRuc() != null && !request.getRuc().isEmpty()) {
+            if (proveedorRepository.existsByRucAndIdNot(request.getRuc(), id)) {
+                throw new IllegalArgumentException("El RUC " + request.getRuc() + " ya pertenece a otro proveedor.");
             }
         }
 
-        proveedor.setNombre(request.getNombre());
-        proveedor.setRuc(request.getRuc());
-        proveedor.setContacto(request.getContacto());
-        proveedor.setTelefono(request.getTelefono());
-        proveedor.setEmail(request.getEmail());
-        proveedor.setDireccion(request.getDireccion());
-        if (request.getActivo() != null) {
-            proveedor.setActivo(request.getActivo());
-        }
+        mapRequestToEntity(request, proveedor);
 
         Proveedor updated = proveedorRepository.save(proveedor);
         return mapToDTO(updated);
@@ -95,8 +83,7 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional
     public void desactivarProveedor(Integer id) {
-        Proveedor proveedor = proveedorRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con ID: " + id));
+        Proveedor proveedor = findByIdInternal(id);
         proveedor.setActivo(false);
         proveedorRepository.save(proveedor);
     }
@@ -117,7 +104,25 @@ public class ProveedorServiceImpl implements ProveedorService {
         return mapToDTO(proveedor);
     }
 
-    // Método auxiliar para mapear entidad a DTO
+    // --- MÉTODOS PRIVADOS PARA EVITAR CÓDIGO REPETIDO ---
+
+    private Proveedor findByIdInternal(Integer id) {
+        return proveedorRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con ID: " + id));
+    }
+
+    private void mapRequestToEntity(ProveedorRequestDTO request, Proveedor proveedor) {
+        proveedor.setNombre(request.getNombre());
+        proveedor.setRuc(request.getRuc());
+        proveedor.setContacto(request.getContacto());
+        proveedor.setTelefono(request.getTelefono());
+        proveedor.setEmail(request.getEmail());
+        proveedor.setDireccion(request.getDireccion());
+        if (request.getActivo() != null) {
+            proveedor.setActivo(request.getActivo());
+        }
+    }
+
     private ProveedorResponseDTO mapToDTO(Proveedor proveedor) {
         ProveedorResponseDTO dto = new ProveedorResponseDTO();
         dto.setId(proveedor.getId());
@@ -129,6 +134,7 @@ public class ProveedorServiceImpl implements ProveedorService {
         dto.setDireccion(proveedor.getDireccion());
         dto.setActivo(proveedor.getActivo());
         dto.setFechaCreacion(proveedor.getFechaCreacion());
+        dto.setFechaActualizacion(proveedor.getFechaActualizacion());
         return dto;
     }
 }
