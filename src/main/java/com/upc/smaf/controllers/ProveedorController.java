@@ -17,7 +17,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/proveedores")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = "*") // <--- ¡ASEGÚRATE DE TENER ESTO!
 public class ProveedorController {
 
     private final ProveedorService proveedorService;
