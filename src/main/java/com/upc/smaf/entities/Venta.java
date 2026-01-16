@@ -26,7 +26,6 @@ public class Venta {
     @Column(name = "fecha_venta", nullable = false)
     private LocalDateTime fechaVenta;
 
-    // ... (Tu relación con Cliente si la tienes, o nombre_cliente) ...
     @Column(name = "nombre_cliente", length = 100)
     private String nombreCliente;
 
@@ -34,31 +33,50 @@ public class Venta {
     @Column(name = "tipo_cliente", nullable = false)
     private TipoCliente tipoCliente;
 
+    // Define si es CONTADO o CREDITO
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_pago", nullable = false)
+    private TipoPago tipoPago;
+
+    // Método de pago principal (o de la inicial si es crédito)
     @Enumerated(EnumType.STRING)
     @Column(name = "metodo_pago", nullable = false)
     private MetodoPago metodoPago;
 
-    // ✅ NUEVO: Columnas para Pago Mixto
+    // --- CAMPOS DE PAGO MIXTO ---
     @Column(name = "pago_efectivo", precision = 10, scale = 2)
     private BigDecimal pagoEfectivo;
 
     @Column(name = "pago_transferencia", precision = 10, scale = 2)
     private BigDecimal pagoTransferencia;
 
-    // ✅ NUEVO: Columnas para Moneda y TC (Faltaban en tu Entity)
-    @Column(length = 3)
-    private String moneda; // PEN, USD
+    // --- CAMPOS DE CRÉDITO ---
+    @Column(name = "monto_inicial", precision = 10, scale = 2)
+    private BigDecimal montoInicial;
 
-    @Column(name = "tipo_cambio", precision = 10, scale = 4) // Scale 4 para mejor precisión en TC
+    @Column(name = "numero_cuotas")
+    private Integer numeroCuotas;
+
+    @Column(name = "monto_cuota", precision = 10, scale = 2)
+    private BigDecimal montoCuota;
+
+    @Column(name = "saldo_pendiente", precision = 10, scale = 2)
+    private BigDecimal saldoPendiente;
+
+    // --- CAMPOS DE MONEDA Y DOCUMENTO ---
+    @Column(length = 3)
+    private String moneda;
+
+    @Column(name = "tipo_cambio", precision = 10, scale = 4)
     private BigDecimal tipoCambio;
 
-    // ✅ NUEVO: Tipo de Comprobante (Factura, Boleta) y el Número (F001-123)
     @Column(name = "tipo_documento", length = 20)
     private String tipoDocumento;
 
     @Column(name = "numero_documento", length = 50)
     private String numeroDocumento;
 
+    // --- TOTALES ---
     @Column(precision = 10, scale = 2, nullable = false)
     private BigDecimal subtotal;
 
@@ -75,19 +93,37 @@ public class Venta {
     @Column(nullable = false)
     private EstadoVenta estado;
 
+    // --- RELACIONES ---
+
+    // Detalles de productos vendidos
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DetalleVenta> detalles = new ArrayList<>();
 
+    // Historial de Pagos / Amortizaciones
+    @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Pago> pagos = new ArrayList<>();
+
+    // ✅ NUEVO: Cuenta donde entró el dinero HOY (Total o Inicial)
+    @ManyToOne
+    @JoinColumn(name = "cuenta_bancaria_id", nullable = true)
+    private CuentaBancaria cuentaBancaria;
+
+    // --- AUDITORÍA ---
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
 
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion;
 
+    // --- MÉTODOS DE CICLO DE VIDA ---
     @PrePersist
     protected void onCreate() {
         fechaCreacion = LocalDateTime.now();
         fechaActualizacion = LocalDateTime.now();
+
+        if (montoInicial == null) montoInicial = BigDecimal.ZERO;
+        if (saldoPendiente == null) saldoPendiente = BigDecimal.ZERO;
+        if (numeroCuotas == null) numeroCuotas = 0;
     }
 
     @PreUpdate
@@ -95,8 +131,14 @@ public class Venta {
         fechaActualizacion = LocalDateTime.now();
     }
 
+    // --- MÉTODOS AUXILIARES ---
     public void agregarDetalle(DetalleVenta detalle) {
         detalles.add(detalle);
         detalle.setVenta(this);
+    }
+
+    public void agregarPago(Pago pago) {
+        pagos.add(pago);
+        pago.setVenta(this);
     }
 }

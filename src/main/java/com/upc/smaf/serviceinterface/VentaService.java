@@ -3,6 +3,8 @@ package com.upc.smaf.serviceinterface;
 import com.upc.smaf.dtos.request.VentaRequestDTO;
 import com.upc.smaf.dtos.response.VentaResponseDTO;
 import com.upc.smaf.entities.EstadoVenta;
+import com.upc.smaf.entities.MetodoPago;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,6 +32,9 @@ public interface VentaService {
     VentaResponseDTO completarVenta(Integer id);
     VentaResponseDTO convertirBorradorAVenta(Integer id);
     void cancelarVenta(Integer id);
+
+    // ✅ ACTUALIZADO: Agregamos "Integer cuentaId" al final
+    VentaResponseDTO registrarAmortizacion(Integer ventaId, BigDecimal monto, MetodoPago metodo, Integer cuentaId);
 
     // ========== ESTADÍSTICAS ==========
     Long contarVentasPorEstado(EstadoVenta estado);

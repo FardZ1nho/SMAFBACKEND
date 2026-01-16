@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@EntityListeners(AuditingEntityListener.class) // <--- IMPORTANTE: Activa la auditoría de fechas
+@EntityListeners(AuditingEntityListener.class)
 public class Proveedor {
 
     @Id
@@ -25,8 +25,13 @@ public class Proveedor {
     @Column(nullable = false, length = 200)
     private String nombre;
 
-    @Column(length = 11, unique = true)
+    // Aumentamos a 20 para cubrir los 18 de China y posibles nuevos formatos
+    @Column(length = 20, unique = true)
     private String ruc;
+
+    // Agregamos el país para lógica de negocio (PERÚ, CHINA, etc.)
+    @Column(length = 50, nullable = false)
+    private String pais;
 
     @Column(length = 100)
     private String contacto;
@@ -43,25 +48,19 @@ public class Proveedor {
     @Column(nullable = false)
     private Boolean activo = true;
 
-    // Se llena solo cuando creas el registro
     @CreatedDate
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
 
-    // Se llena/actualiza solo cuando editas el registro (ESTO TE FALTABA)
     @LastModifiedDate
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion;
 
-    // Mantenemos esto solo para asegurar que 'activo' sea true por defecto
     @PrePersist
     protected void onPrePersist() {
-        if (this.activo == null) {
-            this.activo = true;
-        }
-        // ESTO ES LO QUE FALTABA: Asegurar que la fecha nunca sea null
-        if (this.fechaCreacion == null) {
-            this.fechaCreacion = LocalDateTime.now();
-        }
+        if (this.activo == null) this.activo = true;
+        if (this.fechaCreacion == null) this.fechaCreacion = LocalDateTime.now();
+        // Normalizar a mayúsculas para evitar problemas de búsqueda
+        if (this.ruc != null) this.ruc = this.ruc.toUpperCase().trim();
     }
 }

@@ -9,13 +9,12 @@ public class ProveedorResponseDTO {
     private Integer id;
     private String nombre;
     private String ruc;
+    private String pais; // Agregado
     private String contacto;
     private String telefono;
     private String email;
     private String direccion;
     private Boolean activo;
-
-    // Fechas de auditoría
     private LocalDateTime fechaCreacion;
-    private LocalDateTime fechaActualizacion; // Nuevo campo útil
+    private LocalDateTime fechaActualizacion;
 }

@@ -3,6 +3,7 @@ package com.upc.smaf.dtos.response;
 import com.upc.smaf.entities.EstadoVenta;
 import com.upc.smaf.entities.MetodoPago;
 import com.upc.smaf.entities.TipoCliente;
+import com.upc.smaf.entities.TipoPago;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -18,13 +19,21 @@ public class VentaResponseDTO {
     private String nombreCliente;
     private TipoCliente tipoCliente;
 
+    private TipoPago tipoPago;
     private MetodoPago metodoPago;
 
-    // ✅ NUEVO: Campos para detallar el pago mixto
+    // ✅ NUEVO: Información de la cuenta destino
+    private Integer cuentaBancariaId;
+    private String nombreCuentaBancaria; // Ej: "Yape Patrick"
+
     private BigDecimal pagoEfectivo;
     private BigDecimal pagoTransferencia;
 
-    // ✅ NUEVO: Campos para moneda y cambio
+    private BigDecimal montoInicial;
+    private Integer numeroCuotas;
+    private BigDecimal montoCuota;
+    private BigDecimal saldoPendiente;
+
     private String moneda;
     private BigDecimal tipoCambio;
 
@@ -36,7 +45,14 @@ public class VentaResponseDTO {
     private BigDecimal total;
     private String notas;
     private EstadoVenta estado;
+
+    // Lista de detalles
     private List<DetalleVentaResponseDTO> detalles;
+
+    // Lista de pagos (historial de amortizaciones)
+    // Es útil incluir esto si quieres ver el historial completo en el detalle
+    // private List<PagoResponseDTO> pagos;
+
     private LocalDateTime fechaCreacion;
     private LocalDateTime fechaActualizacion;
 }

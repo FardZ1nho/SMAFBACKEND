@@ -10,27 +10,28 @@ import lombok.Data;
 public class ProveedorRequestDTO {
 
     @NotBlank(message = "El nombre del proveedor es obligatorio")
-    @Size(max = 200, message = "El nombre no puede exceder 200 caracteres")
+    @Size(max = 200)
     private String nombre;
 
-    @NotBlank(message = "El RUC es obligatorio")
-    @Size(min = 11, max = 11, message = "El RUC debe tener exactamente 11 caracteres")
-    @Pattern(regexp = "\\d+", message = "El RUC debe contener solo números")
+    @NotBlank(message = "El número de identificación (RUC/USCC) es obligatorio")
+    @Size(min = 8, max = 20, message = "La identificación debe tener entre 8 y 20 caracteres")
+    // Quitamos el Pattern de solo números para permitir letras (China USCC)
     private String ruc;
 
-    @Size(max = 100, message = "El contacto no puede exceder 100 caracteres")
+    @NotBlank(message = "El país es obligatorio")
+    private String pais;
+
+    @Size(max = 100)
     private String contacto;
 
-    // CORREGIDO: Ahora acepta espacios (ej: 999 444 555)
-    @Size(max = 15, message = "El teléfono no puede exceder 15 caracteres")
-    @Pattern(regexp = "^[0-9+ ]+$", message = "El teléfono solo puede contener números, espacios y el signo +")
+    @Size(max = 15)
+    @Pattern(regexp = "^[0-9+ ]+$", message = "Formato de teléfono inválido")
     private String telefono;
 
-    @Email(message = "El email debe tener un formato válido")
-    @Size(max = 100, message = "El email no puede exceder 100 caracteres")
+    @Email
     private String email;
 
-    @Size(max = 250, message = "La dirección no puede exceder 250 caracteres")
+    @Size(max = 250)
     private String direccion;
 
     private Boolean activo = true;

@@ -2,6 +2,7 @@ package com.upc.smaf.dtos.request;
 
 import com.upc.smaf.entities.MetodoPago;
 import com.upc.smaf.entities.TipoCliente;
+import com.upc.smaf.entities.TipoPago;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -19,17 +20,24 @@ public class VentaRequestDTO {
     @NotNull(message = "El tipo de cliente es requerido")
     private TipoCliente tipoCliente;
 
+    @NotNull(message = "El tipo de pago es requerido")
+    private TipoPago tipoPago;
+
     @NotNull(message = "El método de pago es requerido")
     private MetodoPago metodoPago;
 
-    // ✅ NUEVO: Campos para recibir los montos del Pago Mixto
+    // ✅ NUEVO: Cuenta destino (Yape/Plin/Banco)
+    // Es opcional porque si es EFECTIVO no se envía.
+    private Integer cuentaBancariaId;
+
     private BigDecimal pagoEfectivo;
     private BigDecimal pagoTransferencia;
 
-    // Para saber en qué moneda se hizo la transacción
-    private String moneda;
+    // Campos de Crédito
+    private BigDecimal montoInicial;
+    private Integer numeroCuotas;
 
-    // Para guardar el TC del momento
+    private String moneda;
     private BigDecimal tipoCambio;
 
     private String tipoDocumento;

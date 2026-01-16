@@ -10,90 +10,47 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/proveedores")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // <--- ¡ASEGÚRATE DE TENER ESTO!
+@CrossOrigin(origins = "*")
 public class ProveedorController {
 
     private final ProveedorService proveedorService;
 
     /**
-     * Crear un nuevo proveedor
-     * POST /proveedores
+     * Crear un nuevo proveedor (Nacional o Internacional)
      */
     @PostMapping
     public ResponseEntity<?> crearProveedor(@Valid @RequestBody ProveedorRequestDTO request) {
         try {
             ProveedorResponseDTO response = proveedorService.crearProveedor(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (IllegalArgumentException e) {
+            // Captura errores de validación (Ej: RUC no tiene 11 dígitos o USCC no tiene 18)
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (DataIntegrityViolationException e) {
-            // Convertimos a minúsculas para facilitar la búsqueda
             String mensajeTecnico = e.getMostSpecificCause().getMessage().toLowerCase();
-            System.out.println("⚠️ ERROR SQL DETECTADO: " + mensajeTecnico); // Míralo en consola
-
-            String mensajeUsuario;
+            String mensajeUsuario = "Error en la base de datos.";
 
             if (mensajeTecnico.contains("ruc")) {
-                mensajeUsuario = "El RUC ingresado ya existe en el sistema.";
-            } else if (mensajeTecnico.contains("email") || mensajeTecnico.contains("correo")) {
-                mensajeUsuario = "Ese correo electrónico ya está registrado.";
-            } else if (mensajeTecnico.contains("telefono")) {
-                mensajeUsuario = "Ese teléfono ya está registrado.";
-            } else if (mensajeTecnico.contains("nombre") || mensajeTecnico.contains("razon")) {
-                mensajeUsuario = "Ya existe un proveedor con esa Razón Social / Nombre.";
-            } else {
-                // AQUÍ EL CAMBIO CLAVE: Te mostrará el error real en la pantalla
-                mensajeUsuario = "Error de base de datos desconocido: " + mensajeTecnico;
+                mensajeUsuario = "La identificación (RUC/USCC) ya existe en el sistema.";
+            } else if (mensajeTecnico.contains("nombre")) {
+                mensajeUsuario = "Ya existe un proveedor con esa Razón Social.";
             }
 
             return ResponseEntity.badRequest().body(Map.of("message", mensajeUsuario));
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.badRequest().body(Map.of("message", "Error interno: " + e.getMessage()));
-        }
-    }
-    /**
-     * Obtener proveedor por ID
-     * GET /proveedores/{id}
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<?> obtenerProveedor(@PathVariable Integer id) {
-        try {
-            ProveedorResponseDTO response = proveedorService.obtenerProveedor(id);
-            return ResponseEntity.ok(response);
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Proveedor no encontrado"));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", "Error interno: " + e.getMessage()));
         }
     }
 
     /**
-     * Listar todos los proveedores
-     * GET /proveedores
-     */
-    @GetMapping
-    public ResponseEntity<List<ProveedorResponseDTO>> listarProveedores() {
-        List<ProveedorResponseDTO> proveedores = proveedorService.listarProveedores();
-        return ResponseEntity.ok(proveedores);
-    }
-
-    /**
-     * Listar solo proveedores activos
-     * GET /proveedores/activos
-     */
-    @GetMapping("/activos")
-    public ResponseEntity<List<ProveedorResponseDTO>> listarProveedoresActivos() {
-        List<ProveedorResponseDTO> proveedores = proveedorService.listarProveedoresActivos();
-        return ResponseEntity.ok(proveedores);
-    }
-
-    /**
-     * Actualizar proveedor
-     * PUT /proveedores/{id}
+     * Actualizar proveedor existente
      */
     @PutMapping("/{id}")
     public ResponseEntity<?> actualizarProveedor(
@@ -102,16 +59,46 @@ public class ProveedorController {
         try {
             ProveedorResponseDTO response = proveedorService.actualizarProveedor(id, request);
             return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            // Captura errores de validación de formato por país
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         } catch (DataIntegrityViolationException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", "El RUC ingresado ya pertenece a otro proveedor."));
+            return ResponseEntity.badRequest().body(Map.of("message", "La identificación ya pertenece a otro proveedor."));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No se pudo actualizar: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    /**
+     * Listar todos los proveedores
+     */
+    @GetMapping
+    public ResponseEntity<List<ProveedorResponseDTO>> listarProveedores() {
+        return ResponseEntity.ok(proveedorService.listarProveedores());
+    }
+
+    /**
+     * Listar solo proveedores activos
+     */
+    @GetMapping("/activos")
+    public ResponseEntity<List<ProveedorResponseDTO>> listarProveedoresActivos() {
+        return ResponseEntity.ok(proveedorService.listarProveedoresActivos());
+    }
+
+    /**
+     * Obtener proveedor por ID
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> obtenerProveedor(@PathVariable Integer id) {
+        try {
+            return ResponseEntity.ok(proveedorService.obtenerProveedor(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
         }
     }
 
     /**
      * Desactivar proveedor (eliminación lógica)
-     * DELETE /proveedores/{id}
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> desactivarProveedor(@PathVariable Integer id) {
@@ -119,31 +106,27 @@ public class ProveedorController {
             proveedorService.desactivarProveedor(id);
             return ResponseEntity.noContent().build();
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Proveedor no encontrado"));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
         }
     }
 
     /**
      * Buscar proveedores por nombre
-     * GET /proveedores/buscar?nombre=ejemplo
      */
     @GetMapping("/buscar")
     public ResponseEntity<List<ProveedorResponseDTO>> buscarPorNombre(@RequestParam String nombre) {
-        List<ProveedorResponseDTO> proveedores = proveedorService.buscarPorNombre(nombre);
-        return ResponseEntity.ok(proveedores);
+        return ResponseEntity.ok(proveedorService.buscarPorNombre(nombre));
     }
 
     /**
-     * Obtener proveedor por RUC
-     * GET /proveedores/ruc/{ruc}
+     * Obtener proveedor por RUC o Identificación Internacional
      */
     @GetMapping("/ruc/{ruc}")
     public ResponseEntity<?> obtenerPorRuc(@PathVariable String ruc) {
         try {
-            ProveedorResponseDTO response = proveedorService.obtenerPorRuc(ruc);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(proveedorService.obtenerPorRuc(ruc));
         } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No existe proveedor con ese RUC"));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", e.getMessage()));
         }
     }
 }

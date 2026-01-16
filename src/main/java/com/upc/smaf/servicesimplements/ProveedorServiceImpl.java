@@ -21,18 +21,24 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional
     public ProveedorResponseDTO crearProveedor(ProveedorRequestDTO request) {
-        // Validar RUC único
-        if (request.getRuc() != null && !request.getRuc().isEmpty()) {
-            if (proveedorRepository.existsByRuc(request.getRuc())) {
-                // Usamos IllegalArgumentException para indicar conflicto de datos
-                throw new IllegalArgumentException("El RUC " + request.getRuc() + " ya se encuentra registrado.");
-            }
+        // 1. Normalización y Limpieza
+        String identificacion = request.getRuc().trim().toUpperCase();
+        String pais = request.getPais().trim().toUpperCase();
+
+        // 2. Validaciones de Negocio según el País
+        validarIdentificacionPorPais(identificacion, pais);
+
+        // 3. Validar duplicidad
+        if (proveedorRepository.existsByRuc(identificacion)) {
+            throw new IllegalArgumentException("La identificación " + identificacion + " ya se encuentra registrada.");
         }
 
         Proveedor proveedor = new Proveedor();
-        mapRequestToEntity(request, proveedor); // Reutilizamos lógica de mapeo
+        mapRequestToEntity(request, proveedor);
 
-        // Asegurar que nace activo
+        // Forzamos valores de creación
+        proveedor.setRuc(identificacion);
+        proveedor.setPais(pais);
         proveedor.setActivo(true);
 
         Proveedor saved = proveedorRepository.save(proveedor);
@@ -67,14 +73,20 @@ public class ProveedorServiceImpl implements ProveedorService {
     public ProveedorResponseDTO actualizarProveedor(Integer id, ProveedorRequestDTO request) {
         Proveedor proveedor = findByIdInternal(id);
 
-        // Validar RUC único EXCLUYENDO al propio proveedor que estamos editando
-        if (request.getRuc() != null && !request.getRuc().isEmpty()) {
-            if (proveedorRepository.existsByRucAndIdNot(request.getRuc(), id)) {
-                throw new IllegalArgumentException("El RUC " + request.getRuc() + " ya pertenece a otro proveedor.");
-            }
+        String identificacion = request.getRuc().trim().toUpperCase();
+        String pais = request.getPais().trim().toUpperCase();
+
+        // Validaciones de formato
+        validarIdentificacionPorPais(identificacion, pais);
+
+        // Validar que el RUC no lo tenga OTRO proveedor
+        if (proveedorRepository.existsByRucAndIdNot(identificacion, id)) {
+            throw new IllegalArgumentException("La identificación " + identificacion + " ya pertenece a otro proveedor.");
         }
 
         mapRequestToEntity(request, proveedor);
+        proveedor.setRuc(identificacion); // Asegurar normalización en update
+        proveedor.setPais(pais);
 
         Proveedor updated = proveedorRepository.save(proveedor);
         return mapToDTO(updated);
@@ -99,21 +111,34 @@ public class ProveedorServiceImpl implements ProveedorService {
     @Override
     @Transactional(readOnly = true)
     public ProveedorResponseDTO obtenerPorRuc(String ruc) {
-        Proveedor proveedor = proveedorRepository.findByRuc(ruc)
-                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con RUC: " + ruc));
+        Proveedor proveedor = proveedorRepository.findByRuc(ruc.trim().toUpperCase())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con identificación: " + ruc));
         return mapToDTO(proveedor);
     }
 
-    // --- MÉTODOS PRIVADOS PARA EVITAR CÓDIGO REPETIDO ---
+    // --- MÉTODOS PRIVADOS DE APOYO ---
 
     private Proveedor findByIdInternal(Integer id) {
         return proveedorRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Proveedor no encontrado con ID: " + id));
     }
 
+    private void validarIdentificacionPorPais(String iden, String pais) {
+        if ("PERÚ".equals(pais) || "PERU".equals(pais)) {
+            // RUC Peruano: 11 dígitos numéricos
+            if (!iden.matches("\\d{11}")) {
+                throw new IllegalArgumentException("El RUC peruano debe tener exactamente 11 dígitos numéricos.");
+            }
+        } else if ("CHINA".equals(pais)) {
+            // USCC Chino: 18 caracteres alfanuméricos
+            if (iden.length() != 18) {
+                throw new IllegalArgumentException("El código USCC de China debe tener exactamente 18 caracteres.");
+            }
+        }
+    }
+
     private void mapRequestToEntity(ProveedorRequestDTO request, Proveedor proveedor) {
         proveedor.setNombre(request.getNombre());
-        proveedor.setRuc(request.getRuc());
         proveedor.setContacto(request.getContacto());
         proveedor.setTelefono(request.getTelefono());
         proveedor.setEmail(request.getEmail());
@@ -128,6 +153,7 @@ public class ProveedorServiceImpl implements ProveedorService {
         dto.setId(proveedor.getId());
         dto.setNombre(proveedor.getNombre());
         dto.setRuc(proveedor.getRuc());
+        dto.setPais(proveedor.getPais()); // Nuevo campo
         dto.setContacto(proveedor.getContacto());
         dto.setTelefono(proveedor.getTelefono());
         dto.setEmail(proveedor.getEmail());
