@@ -9,31 +9,26 @@ import java.math.BigDecimal;
 @Data
 public class ProductoRequestDTO {
 
+    // 👇 NUEVO CAMPO (Puede ser "PRODUCTO" o "SERVICIO")
+    private String tipo;
+
     @NotBlank(message = "El nombre es obligatorio")
     private String nombre;
 
     private String codigo;
-    private String ubicacionAlmacen;
     private String descripcion;
 
     @NotNull(message = "La categoría es obligatoria")
     private Integer idCategoria;
 
-    @NotNull(message = "El stock actual es obligatorio")
-    @PositiveOrZero(message = "El stock no puede ser negativo")
-    private Integer stockActual = 0;
-
-    @NotNull(message = "El stock mínimo es obligatorio")
+    // Para Servicios, mandaremos 0 desde el frontend
     @PositiveOrZero(message = "El stock mínimo no puede ser negativo")
-    private Integer stockMinimo = 5;
+    private Integer stockMinimo = 0;
 
-    // ⭐⭐⭐ TRES PRECIOS ⭐⭐⭐
-    private BigDecimal precioChina;      // Precio en origen
-    private BigDecimal costoTotal;       // Costo real (China + envío + impuestos)
-    private BigDecimal precioVenta;      // Precio de venta
+    private BigDecimal precioChina;
+    private BigDecimal costoTotal;
+    private BigDecimal precioVenta;
 
-    // ⭐⭐⭐ MONEDA ÚNICA ⭐⭐⭐
-    private String moneda = "USD";       // USD, PEN, EUR, etc.
-
+    private String moneda = "USD";
     private String unidadMedida = "unidad";
 }

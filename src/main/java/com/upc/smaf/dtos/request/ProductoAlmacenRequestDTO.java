@@ -18,9 +18,11 @@ public class ProductoAlmacenRequestDTO {
     @NotNull(message = "El ID del almacén es obligatorio")
     private Long almacenId;
 
-    @NotNull(message = "El stock es obligatorio")
-    @Min(value = 0, message = "El stock no puede ser negativo")
-    private Integer stock;
+    // ✅ CORREGIDO: Se llama 'cantidad' para que coincida con el Servicio
+    // Representa cuánto vas a SUMAR, no el total final.
+    @NotNull(message = "La cantidad a ingresar es obligatoria")
+    @Min(value = 1, message = "Debes ingresar al menos 1 unidad")
+    private Integer cantidad;
 
     @Size(max = 100, message = "La ubicación física no puede tener más de 100 caracteres")
     private String ubicacionFisica;

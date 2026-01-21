@@ -3,6 +3,7 @@ package com.upc.smaf.controllers;
 import com.upc.smaf.dtos.request.CompraRequestDTO;
 import com.upc.smaf.dtos.response.CompraResponseDTO;
 import com.upc.smaf.serviceinterface.CompraService;
+import jakarta.validation.Valid; // ✅ Importante para validar el DTO
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,25 +19,18 @@ public class CompraController {
 
     private final CompraService compraService;
 
-    /**
-     * POST /compras
-     * Registra una nueva compra con sus detalles y actualiza el stock.
-     */
+    // POST: Registra una compra (Bien o Servicio)
     @PostMapping
-    public ResponseEntity<CompraResponseDTO> registrarCompra(@RequestBody CompraRequestDTO request) {
+    public ResponseEntity<?> registrarCompra(@Valid @RequestBody CompraRequestDTO request) {
         try {
-            CompraResponseDTO response = compraService.registrarCompra(request);
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            return new ResponseEntity<>(compraService.registrarCompra(request), HttpStatus.CREATED);
         } catch (RuntimeException e) {
-            // Devuelve un error 400 con el mensaje de la excepción (ej: "Producto no encontrado")
-            return ResponseEntity.badRequest().header("Error-Message", e.getMessage()).build();
+            // Retorna el mensaje de error directo (ej. "Proveedor no encontrado")
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
-    /**
-     * GET /compras/{id}
-     * Obtiene los datos de una compra específica.
-     */
+    // GET: Obtiene una compra por ID
     @GetMapping("/{id}")
     public ResponseEntity<CompraResponseDTO> obtenerCompra(@PathVariable Integer id) {
         try {
@@ -46,28 +40,19 @@ public class CompraController {
         }
     }
 
-    /**
-     * GET /compras
-     * Lista el historial de todas las compras.
-     */
+    // GET: Lista todo el historial
     @GetMapping
     public ResponseEntity<List<CompraResponseDTO>> listarTodas() {
         return ResponseEntity.ok(compraService.listarTodas());
     }
 
-    /**
-     * GET /compras/proveedor/{proveedorId}
-     * Filtra compras por un proveedor específico.
-     */
+    // GET: Filtra por proveedor
     @GetMapping("/proveedor/{proveedorId}")
     public ResponseEntity<List<CompraResponseDTO>> listarPorProveedor(@PathVariable Integer proveedorId) {
         return ResponseEntity.ok(compraService.listarPorProveedor(proveedorId));
     }
 
-    /**
-     * GET /compras/buscar?numero=...
-     * Busca compras por coincidencia en el número de comprobante.
-     */
+    // GET: Busca por número de documento (ej. /compras/buscar?numero=F001)
     @GetMapping("/buscar")
     public ResponseEntity<List<CompraResponseDTO>> buscarPorNumero(@RequestParam String numero) {
         return ResponseEntity.ok(compraService.buscarPorNumero(numero));

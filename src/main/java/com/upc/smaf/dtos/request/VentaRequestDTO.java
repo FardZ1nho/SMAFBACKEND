@@ -13,6 +13,7 @@ import java.util.List;
 
 @Data
 public class VentaRequestDTO {
+
     private LocalDateTime fechaVenta;
     private Integer clienteId;
     private String nombreCliente;
@@ -21,23 +22,18 @@ public class VentaRequestDTO {
     private TipoCliente tipoCliente;
 
     @NotNull(message = "El tipo de pago es requerido")
-    private TipoPago tipoPago;
+    private TipoPago tipoPago; // CONTADO o CREDITO
 
-    @NotNull(message = "El método de pago es requerido")
-    private MetodoPago metodoPago;
+    // --- NUEVO: LISTA DINÁMICA DE PAGOS ---
+    // Ya no usamos campos fijos como pagoEfectivo o cuentaBancariaId aquí.
+    @NotEmpty(message = "Debe registrar al menos un método de pago")
+    @Valid
+    private List<PagoRequestDTO> pagos;
 
-    // ✅ NUEVO: Cuenta destino (Yape/Plin/Banco)
-    // Es opcional porque si es EFECTIVO no se envía.
-    private Integer cuentaBancariaId;
-
-    private BigDecimal pagoEfectivo;
-    private BigDecimal pagoTransferencia;
-
-    // Campos de Crédito
-    private BigDecimal montoInicial;
+    // Campos de Crédito (Solo si es a crédito)
     private Integer numeroCuotas;
 
-    private String moneda;
+    private String moneda; // Moneda del documento (PEN o USD)
     private BigDecimal tipoCambio;
 
     private String tipoDocumento;
@@ -49,4 +45,21 @@ public class VentaRequestDTO {
     @NotEmpty(message = "Debe agregar al menos un producto a la venta")
     @Valid
     private List<DetalleVentaRequestDTO> detalles;
+
+    // --- CLASE INTERNA PARA DEFINIR CADA PAGO ---
+    @Data
+    public static class PagoRequestDTO {
+        @NotNull(message = "El método de pago es requerido")
+        private MetodoPago metodoPago; // EFECTIVO, TRANSFERENCIA, YAPE, ETC.
+
+        @NotNull
+        @Positive(message = "El monto debe ser mayor a 0")
+        private BigDecimal monto;
+
+        @NotNull
+        private String moneda; // 'PEN' o 'USD' (Puede ser diferente a la venta)
+
+        private Integer cuentaBancariaId; // Opcional (Solo para bancos/digitales)
+        private String referencia; // Opcional (Nro operación)
+    }
 }

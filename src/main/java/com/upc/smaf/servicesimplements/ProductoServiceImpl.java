@@ -1,15 +1,18 @@
 package com.upc.smaf.servicesimplements;
 
+import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO; // 👈 Importante
 import com.upc.smaf.dtos.request.ProductoRequestDTO;
 import com.upc.smaf.dtos.response.ProductoResponseDTO;
-import com.upc.smaf.entities.Categoria;
-import com.upc.smaf.entities.Producto;
+import com.upc.smaf.entities.*;
+import com.upc.smaf.repositories.AlmacenRepository; // 👈 Importante
 import com.upc.smaf.repositories.CategoriaRepository;
+import com.upc.smaf.repositories.ProductoAlmacenRepository; // 👈 Importante
 import com.upc.smaf.repositories.ProductoRepository;
 import com.upc.smaf.serviceinterface.ProductoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
@@ -19,51 +22,105 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductoServiceImpl implements ProductoService {
 
+    // ========== 1. INYECCIÓN DE DEPENDENCIAS (Repositorios) ==========
     private final ProductoRepository productoRepository;
     private final CategoriaRepository categoriaRepository;
+
+    // 👇 AGREGAMOS ESTOS DOS QUE FALTABAN PARA LA LÓGICA DE STOCK
+    private final AlmacenRepository almacenRepository;
+    private final ProductoAlmacenRepository productoAlmacenRepository;
+
+    // ========== 2. IMPLEMENTACIÓN DE MÉTODOS ==========
 
     @Override
     @Transactional
     public ProductoResponseDTO crearProducto(ProductoRequestDTO request) {
-        // 1. Validar que la categoría existe
-        Categoria categoria = categoriaRepository.findById(request.getIdCategoria())
-                .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
-
-        // 2. Validar que el código no exista (solo entre productos ACTIVOS)
-        if (request.getCodigo() != null &&
-                productoRepository.findByCodigoAndActivoTrue(request.getCodigo()).isPresent()) {
-            throw new RuntimeException("Ya existe un producto activo con ese código");
+        // Validar código único, categoría, etc... (lo que ya tengas)
+        if (productoRepository.existsByCodigo(request.getCodigo())) {
+            throw new RuntimeException("El código SKU ya existe");
         }
 
-        // 3. Generar código si no se proporciona
-        String codigo = request.getCodigo();
-        if (codigo == null || codigo.trim().isEmpty()) {
-            codigo = generarCodigoProducto(request.getNombre());
-        }
-
-        // 4. Crear producto
         Producto producto = new Producto();
         producto.setNombre(request.getNombre());
-        producto.setCodigo(codigo);
+
+        // 👇👇 AGREGA ESTO: MAPEO DEL TIPO 👇👇
+        if (request.getTipo() != null) {
+            try {
+                // Convertimos el String "SERVICIO" a Enum
+                producto.setTipo(TipoProducto.valueOf(request.getTipo()));
+            } catch (IllegalArgumentException e) {
+                producto.setTipo(TipoProducto.PRODUCTO); // Fallback
+            }
+        } else {
+            producto.setTipo(TipoProducto.PRODUCTO);
+        }
+        // 👆👆 FIN DEL BLOQUE NUEVO 👆👆
+
+        producto.setCodigo(request.getCodigo());
         producto.setDescripcion(request.getDescripcion());
+
+        // ... resto de tus setters (Categoría, Precios, etc) ...
+        Categoria categoria = categoriaRepository.findById(request.getIdCategoria())
+                .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
         producto.setCategoria(categoria);
-        producto.setStockActual(request.getStockActual());
+
         producto.setStockMinimo(request.getStockMinimo());
-
-        // ⭐⭐⭐ TRES PRECIOS ⭐⭐⭐
-        producto.setPrecioChina(request.getPrecioChina());
-        producto.setCostoTotal(request.getCostoTotal());
         producto.setPrecioVenta(request.getPrecioVenta());
+        producto.setUnidadMedida(request.getUnidadMedida());
+        // ... etc ...
 
-        // ⭐⭐⭐ MONEDA ⭐⭐⭐
-        producto.setMoneda(request.getMoneda() != null ? request.getMoneda() : "USD");
-        producto.setUnidadMedida(request.getUnidadMedida() != null ? request.getUnidadMedida() : "unidad");
+        // Si es SERVICIO, forzamos stock 0 y activo true (opcional)
+        if (producto.getTipo() == TipoProducto.SERVICIO) {
+            producto.setStockActual(0);
+        }
 
-        producto.setActivo(true);
-
-        producto = productoRepository.save(producto);
-        return convertirAResponseDTO(producto);
+        Producto guardado = productoRepository.save(producto);
+        return convertirAResponseDTO(guardado);
     }
+
+    // 👇👇👇 3. AQUÍ ESTÁ EL MÉTODO QUE TE FALTABA 👇👇👇
+    @Override
+    @Transactional
+    public ProductoAlmacen agregarStock(ProductoAlmacenRequestDTO dto) {
+        // 1. Validar existencia
+        Producto producto = productoRepository.findById(dto.getProductoId())
+                .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
+
+        Almacen almacen = almacenRepository.findById(dto.getAlmacenId())
+                .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
+
+        // 2. Buscar o Crear relación
+        ProductoAlmacen pa = productoAlmacenRepository.findByProductoAndAlmacen(producto, almacen)
+                .orElseGet(() -> {
+                    ProductoAlmacen nuevo = new ProductoAlmacen();
+                    nuevo.setProducto(producto);
+                    nuevo.setAlmacen(almacen);
+                    nuevo.setStock(0);
+                    nuevo.setActivo(true);
+                    return nuevo;
+                });
+
+        // 3. Lógica de negocio: SUMAR STOCK
+        pa.setStock(pa.getStock() + dto.getCantidad());
+
+        // Actualizar datos opcionales
+        if (dto.getUbicacionFisica() != null && !dto.getUbicacionFisica().isBlank()) {
+            pa.setUbicacionFisica(dto.getUbicacionFisica());
+        }
+        if (dto.getStockMinimo() != null) {
+            pa.setStockMinimo(dto.getStockMinimo());
+        }
+
+        // 4. Guardar movimiento en almacén
+        productoAlmacenRepository.save(pa);
+
+        // 5. RECALCULAR STOCK TOTAL DEL PRODUCTO
+        producto.calcularStockTotal(); // Asegúrate que tu Entidad Producto tenga este método helper
+        productoRepository.save(producto);
+
+        return pa;
+    }
+    // 👆👆👆 FIN DEL MÉTODO NUEVO 👆👆👆
 
     @Override
     public ProductoResponseDTO obtenerProducto(Integer id) {
@@ -92,37 +149,27 @@ public class ProductoServiceImpl implements ProductoService {
         Producto producto = productoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
-        // Validar que la categoría existe
         Categoria categoria = categoriaRepository.findById(request.getIdCategoria())
                 .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
 
-        // Validar código único (si cambia) - solo entre productos ACTIVOS
-        if (request.getCodigo() != null &&
+        if (request.getCodigo() != null && !request.getCodigo().trim().isEmpty() &&
                 !request.getCodigo().equals(producto.getCodigo()) &&
                 productoRepository.findByCodigoAndActivoTrue(request.getCodigo()).isPresent()) {
             throw new RuntimeException("Ya existe un producto activo con ese código");
         }
 
-        // Actualizar campos
         producto.setNombre(request.getNombre());
-        producto.setCodigo(request.getCodigo());
+        if (request.getCodigo() != null) producto.setCodigo(request.getCodigo());
         producto.setDescripcion(request.getDescripcion());
         producto.setCategoria(categoria);
-        producto.setStockActual(request.getStockActual());
-        producto.setStockMinimo(request.getStockMinimo());
 
-        // ⭐⭐⭐ ACTUALIZAR TRES PRECIOS ⭐⭐⭐
+        if (request.getStockMinimo() != null) producto.setStockMinimo(request.getStockMinimo());
+
         producto.setPrecioChina(request.getPrecioChina());
         producto.setCostoTotal(request.getCostoTotal());
         producto.setPrecioVenta(request.getPrecioVenta());
-
-        // ⭐⭐⭐ ACTUALIZAR MONEDA ⭐⭐⭐
-        if (request.getMoneda() != null) {
-            producto.setMoneda(request.getMoneda());
-        }
-        if (request.getUnidadMedida() != null) {
-            producto.setUnidadMedida(request.getUnidadMedida());
-        }
+        if (request.getMoneda() != null) producto.setMoneda(request.getMoneda());
+        if (request.getUnidadMedida() != null) producto.setUnidadMedida(request.getUnidadMedida());
 
         producto = productoRepository.save(producto);
         return convertirAResponseDTO(producto);
@@ -133,12 +180,8 @@ public class ProductoServiceImpl implements ProductoService {
     public void desactivarProducto(Integer id) {
         Producto producto = productoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
-
-        // Eliminación lógica: Solo cambiar el estado a false
         producto.setActivo(false);
         productoRepository.save(producto);
-
-        System.out.println("✅ Producto desactivado (eliminación lógica): " + producto.getCodigo());
     }
 
     @Override
@@ -174,24 +217,16 @@ public class ProductoServiceImpl implements ProductoService {
         Producto producto = productoRepository.findById(idProducto)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
-        if (producto.getStockActual() <= 0) {
-            return "AGOTADO";
-        } else if (producto.getStockActual() < producto.getStockMinimo()) {
-            return "BAJO";
-        } else if (producto.getStockActual() < producto.getStockMinimo() * 2) {
-            return "NORMAL";
-        } else {
-            return "ALTO";
-        }
+        if (producto.getStockActual() <= 0) return "AGOTADO";
+        else if (producto.getStockActual() < producto.getStockMinimo()) return "BAJO";
+        else if (producto.getStockActual() < producto.getStockMinimo() * 2) return "NORMAL";
+        else return "ALTO";
     }
 
     // ========== MÉTODOS PRIVADOS AUXILIARES ==========
 
     private String generarCodigoProducto(String nombre) {
-        // Simple: primeras 3 letras + timestamp
-        String prefijo = nombre.length() >= 3 ?
-                nombre.substring(0, 3).toUpperCase() :
-                nombre.toUpperCase();
+        String prefijo = nombre.length() >= 3 ? nombre.substring(0, 3).toUpperCase() : nombre.toUpperCase();
         return prefijo + "-" + System.currentTimeMillis() % 10000;
     }
 
@@ -200,9 +235,13 @@ public class ProductoServiceImpl implements ProductoService {
         response.setId(producto.getId());
         response.setNombre(producto.getNombre());
         response.setCodigo(producto.getCodigo());
+
+        // 👇 ESTA ES LA LÍNEA QUE FALTABA PARA ARREGLAR TU TABLA 👇
+        // Convierte el Enum (PRODUCTO/SERVICIO) a String para enviarlo al frontend
+        response.setTipo(producto.getTipo().name());
+
         response.setDescripcion(producto.getDescripcion());
 
-        // Información de categoría
         if (producto.getCategoria() != null) {
             response.setIdCategoria(producto.getCategoria().getId());
             response.setNombreCategoria(producto.getCategoria().getNombre());
@@ -211,22 +250,17 @@ public class ProductoServiceImpl implements ProductoService {
         response.setStockActual(producto.getStockActual());
         response.setStockMinimo(producto.getStockMinimo());
 
-        // ⭐⭐⭐ TRES PRECIOS ⭐⭐⭐
         response.setPrecioChina(producto.getPrecioChina());
         response.setCostoTotal(producto.getCostoTotal());
         response.setPrecioVenta(producto.getPrecioVenta());
 
-        // ⭐⭐⭐ MONEDA Y UNIDAD ⭐⭐⭐
         response.setMoneda(producto.getMoneda());
         response.setUnidadMedida(producto.getUnidadMedida());
 
         response.setActivo(producto.getActivo());
         response.setFechaCreacion(producto.getFechaCreacion());
 
-        // ⭐⭐⭐ CALCULAR MARGEN DE GANANCIA ⭐⭐⭐
         calcularMargenGanancia(response);
-
-        // Calcular estado de stock
         calcularEstadoStock(response);
 
         return response;
@@ -234,11 +268,9 @@ public class ProductoServiceImpl implements ProductoService {
 
     private void calcularMargenGanancia(ProductoResponseDTO producto) {
         if (producto.getPrecioVenta() != null && producto.getCostoTotal() != null) {
-            // Margen = Precio Venta - Costo Total
             BigDecimal margen = producto.getPrecioVenta().subtract(producto.getCostoTotal());
             producto.setMargenGanancia(margen);
 
-            // Porcentaje de margen = (Margen / Precio Venta) * 100
             if (producto.getPrecioVenta().compareTo(BigDecimal.ZERO) > 0) {
                 BigDecimal porcentaje = margen
                         .divide(producto.getPrecioVenta(), 4, RoundingMode.HALF_UP)

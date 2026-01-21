@@ -1,7 +1,9 @@
 package com.upc.smaf.controllers;
 
+import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO; // 👈 ASEGÚRATE DE IMPORTAR ESTO
 import com.upc.smaf.dtos.request.ProductoRequestDTO;
 import com.upc.smaf.dtos.response.ProductoResponseDTO;
+import com.upc.smaf.entities.ProductoAlmacen; // 👈 Para devolver el movimiento (o usa un DTO)
 import com.upc.smaf.serviceinterface.ProductoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -18,27 +20,48 @@ public class ProductoController {
 
     private final ProductoService productoService;
 
-    // ========== ENDPOINTS CRUD ==========
-
-    /**
-     * Crear un nuevo producto
-     * POST /api/productos
-     */
+    // ==========================================
+    // 1. CREACIÓN (SOLO FICHA TÉCNICA)
+    // ==========================================
     @PostMapping
     public ResponseEntity<ProductoResponseDTO> crearProducto(
             @Valid @RequestBody ProductoRequestDTO request) {
         try {
+            // Este método ya no pide stock, crea el producto con stock 0
             ProductoResponseDTO response = productoService.crearProducto(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(null);
+            return ResponseEntity.badRequest().body(null); // O manejar mejor el error
         }
     }
 
+    // ==========================================
+    // 2. NUEVO: INGRESO DE STOCK (LOGÍSTICA)
+    // ==========================================
     /**
-     * Obtener producto por ID
-     * GET /api/productos/{id}
+     * Este endpoint se usa cuando llega el camión con mercadería.
+     * Recibe: idProducto, idAlmacen, cantidad.
      */
+    @PostMapping("/ingreso-stock")
+    public ResponseEntity<?> ingresarStock(
+            @Valid @RequestBody ProductoAlmacenRequestDTO request) {
+        try {
+            // Ejecutamos la lógica (esto funciona bien)
+            productoService.agregarStock(request);
+
+            // ✅ CAMBIO CLAVE: En lugar de devolver el objeto 'movimiento' (que tiene proxies),
+            // devolvemos un mapa simple o un mensaje. Jackson será feliz con esto.
+            return ResponseEntity.ok(java.util.Collections.singletonMap("mensaje", "Stock ingresado correctamente"));
+
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    // ==========================================
+    // CRUD BÁSICO Y CONSULTAS (Se mantienen igual)
+    // ==========================================
+
     @GetMapping("/{id}")
     public ResponseEntity<ProductoResponseDTO> obtenerProducto(@PathVariable Integer id) {
         try {
@@ -49,30 +72,16 @@ public class ProductoController {
         }
     }
 
-    /**
-     * Listar todos los productos
-     * GET /api/productos
-     */
     @GetMapping
     public ResponseEntity<List<ProductoResponseDTO>> listarProductos() {
-        List<ProductoResponseDTO> productos = productoService.listarProductos();
-        return ResponseEntity.ok(productos);
+        return ResponseEntity.ok(productoService.listarProductos());
     }
 
-    /**
-     * Listar solo productos activos
-     * GET /api/productos/activos
-     */
     @GetMapping("/activos")
     public ResponseEntity<List<ProductoResponseDTO>> listarProductosActivos() {
-        List<ProductoResponseDTO> productos = productoService.listarProductosActivos();
-        return ResponseEntity.ok(productos);
+        return ResponseEntity.ok(productoService.listarProductosActivos());
     }
 
-    /**
-     * Actualizar producto
-     * PUT /api/productos/{id}
-     */
     @PutMapping("/{id}")
     public ResponseEntity<ProductoResponseDTO> actualizarProducto(
             @PathVariable Integer id,
@@ -85,10 +94,6 @@ public class ProductoController {
         }
     }
 
-    /**
-     * Desactivar producto (eliminación lógica)
-     * DELETE /api/productos/{id}
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> desactivarProducto(@PathVariable Integer id) {
         try {
@@ -99,118 +104,22 @@ public class ProductoController {
         }
     }
 
-    // ========== ENDPOINTS DE STOCK ==========
-
-
-    /**
-     * Obtener productos con stock bajo
-     * GET /api/productos/stock-bajo
-     */
     @GetMapping("/stock-bajo")
     public ResponseEntity<List<ProductoResponseDTO>> obtenerProductosConStockBajo() {
-        List<ProductoResponseDTO> productos = productoService.obtenerProductosConStockBajo();
-        return ResponseEntity.ok(productos);
+        return ResponseEntity.ok(productoService.obtenerProductosConStockBajo());
     }
 
-    // ========== ENDPOINTS DE BÚSQUEDA ==========
-
-    /**
-     * Buscar producto por código
-     * GET /api/productos/codigo/{codigo}
-     */
-    @GetMapping("/codigo/{codigo}")
-    public ResponseEntity<ProductoResponseDTO> obtenerProductoPorCodigo(
-            @PathVariable String codigo) {
-        try {
-            ProductoResponseDTO response = productoService.obtenerProductoPorCodigo(codigo);
-            return ResponseEntity.ok(response);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    /**
-     * Buscar productos por nombre
-     * GET /api/productos/buscar?nombre=martillo
-     */
     @GetMapping("/buscar")
-    public ResponseEntity<List<ProductoResponseDTO>> buscarProductosPorNombre(
-            @RequestParam String nombre) {
-        List<ProductoResponseDTO> productos = productoService.buscarProductosPorNombre(nombre);
-        return ResponseEntity.ok(productos);
+    public ResponseEntity<List<ProductoResponseDTO>> buscarProductosPorNombre(@RequestParam String nombre) {
+        return ResponseEntity.ok(productoService.buscarProductosPorNombre(nombre));
     }
 
-    // ========== ENDPOINTS DE CONSULTA ==========
-
-    /**
-     * Verificar si un producto necesita reorden
-     * GET /api/productos/{id}/necesita-reorden
-     */
-    @GetMapping("/{id}/necesita-reorden")
-    public ResponseEntity<Boolean> necesitaReorden(@PathVariable Integer id) {
+    @GetMapping("/codigo/{codigo}")
+    public ResponseEntity<ProductoResponseDTO> obtenerProductoPorCodigo(@PathVariable String codigo) {
         try {
-            Boolean necesita = productoService.necesitaReorden(id);
-            return ResponseEntity.ok(necesita);
+            return ResponseEntity.ok(productoService.obtenerProductoPorCodigo(codigo));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }
     }
-
-    /**
-     * Obtener estado de stock de un producto
-     * GET /api/productos/{id}/estado-stock
-     */
-    @GetMapping("/{id}/estado-stock")
-    public ResponseEntity<String> obtenerEstadoStock(@PathVariable Integer id) {
-        try {
-            String estado = productoService.obtenerEstadoStock(id);
-            return ResponseEntity.ok(estado);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    // ========== ENDPOINTS ADICIONALES ==========
-
-    /**
-     * Endpoint de salud (para probar que el controller funciona)
-     * GET /api/productos/salud
-     */
-    @GetMapping("/salud")
-    public ResponseEntity<String> salud() {
-        return ResponseEntity.ok("✅ Módulo Productos funcionando correctamente");
-    }
-
-    /**
-     * Listar productos por categoría (EXTRA)
-     * GET /api/productos/categoria/{idCategoria}
-     */
-    /*
-    @GetMapping("/categoria/{idCategoria}")
-    public ResponseEntity<List<ProductoResponseDTO>> listarProductosPorCategoria(
-            @PathVariable Integer idCategoria) {
-        try {
-            List<ProductoResponseDTO> productos = productoService.listarProductosPorCategoria(idCategoria);
-            return ResponseEntity.ok(productos);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-    */
-
-    /**
-     * Reactivar producto desactivado (EXTRA)
-     * PATCH /api/productos/{id}/reactivar
-     */
-    /*
-    @PatchMapping("/{id}/reactivar")
-    public ResponseEntity<ProductoResponseDTO> reactivarProducto(@PathVariable Integer id) {
-        try {
-            ProductoResponseDTO response = productoService.reactivarProducto(id);
-            return ResponseEntity.ok(response);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-    */
 }

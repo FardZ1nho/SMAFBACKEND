@@ -1,5 +1,7 @@
 package com.upc.smaf.repositories;
 
+import com.upc.smaf.entities.Almacen;
+import com.upc.smaf.entities.Producto;
 import com.upc.smaf.entities.ProductoAlmacen;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -14,6 +16,7 @@ public interface ProductoAlmacenRepository extends JpaRepository<ProductoAlmacen
 
     // Buscar todas las ubicaciones de un producto
     List<ProductoAlmacen> findByProductoId(Integer productoId);
+    Optional<ProductoAlmacen> findByProductoAndAlmacen(Producto producto, Almacen almacen);
 
     // Buscar todos los productos en un almacén
     List<ProductoAlmacen> findByAlmacenId(Long almacenId);

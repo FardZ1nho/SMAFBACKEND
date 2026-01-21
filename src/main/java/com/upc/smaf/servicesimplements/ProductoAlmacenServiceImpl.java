@@ -42,7 +42,7 @@ public class ProductoAlmacenServiceImpl implements ProductoAlmacenService {
 
         productoAlmacen.setProducto(producto);
         productoAlmacen.setAlmacen(almacen);
-        productoAlmacen.setStock(request.getStock());
+        productoAlmacen.setStock(request.getStockMinimo());
         productoAlmacen.setUbicacionFisica(request.getUbicacionFisica());
         productoAlmacen.setStockMinimo(request.getStockMinimo());
         productoAlmacen.setActivo(request.getActivo() != null ? request.getActivo() : true);
@@ -61,7 +61,7 @@ public class ProductoAlmacenServiceImpl implements ProductoAlmacenService {
         ProductoAlmacen productoAlmacen = productoAlmacenRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Asignación no encontrada con ID: " + id));
 
-        productoAlmacen.setStock(request.getStock());
+        productoAlmacen.setStock(request.getStockMinimo());
         productoAlmacen.setUbicacionFisica(request.getUbicacionFisica());
         productoAlmacen.setStockMinimo(request.getStockMinimo());
 

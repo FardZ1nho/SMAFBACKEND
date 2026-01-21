@@ -7,29 +7,18 @@ import java.util.List;
 
 public interface CompraService {
 
-    /**
-     * Registra una nueva compra completa (Cabecera + Detalles).
-     * Esta operación debe ser transaccional y actualizar el stock de productos.
-     */
+    // Registra la compra y, si es FACTURA_COMERCIAL, crea la Importación automáticamente
     CompraResponseDTO registrarCompra(CompraRequestDTO request);
 
-    /**
-     * Obtiene una compra específica por su ID, incluyendo todos sus detalles.
-     */
+    // Obtiene una compra por su ID
     CompraResponseDTO obtenerCompra(Integer id);
 
-    /**
-     * Lista todas las compras registradas en el sistema.
-     */
+    // Lista todas las compras
     List<CompraResponseDTO> listarTodas();
 
-    /**
-     * Lista compras filtradas por un proveedor específico.
-     */
+    // Lista compras de un proveedor específico
     List<CompraResponseDTO> listarPorProveedor(Integer proveedorId);
 
-    /**
-     * Busca compras por el número de comprobante (Serie-Número).
-     */
+    // Busca compras por número de documento (serie-numero)
     List<CompraResponseDTO> buscarPorNumero(String numero);
 }

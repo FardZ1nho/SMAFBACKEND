@@ -1,5 +1,6 @@
 package com.upc.smaf.entities;
 
+import com.upc.smaf.entities.TipoProducto;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -28,6 +29,11 @@ public class Producto {
     @Column(name = "codigo", unique = true, length = 50)
     private String codigo;
 
+    // 👇 2. NUEVO CAMPO: Diferencia entre Producto y Servicio
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo", length = 20, nullable = false)
+    private TipoProducto tipo = TipoProducto.PRODUCTO; // Por defecto es PRODUCTO
+
     @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
 
@@ -35,18 +41,14 @@ public class Producto {
     @JoinColumn(name = "id_categoria", nullable = false)
     private Categoria categoria;
 
-    // ✅ MANTENER: Stock total calculado (suma de todos los almacenes)
+    // ✅ MANTENER: Stock total calculado
     @Column(name = "stock_actual", nullable = false)
     private Integer stockActual = 0;
 
     @Column(name = "stock_minimo", nullable = false)
     private Integer stockMinimo = 5;
 
-    // ❌ ELIMINADO: ubicacionAlmacen (ahora está en ProductoAlmacen)
-    // @Column(name = "ubicacion_almacen", length = 100)
-    // private String ubicacionAlmacen;
-
-    // ✅ NUEVO: Relación con ProductoAlmacen
+    // ✅ Relación con ProductoAlmacen
     @OneToMany(mappedBy = "producto", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProductoAlmacen> productosAlmacen = new ArrayList<>();
 
@@ -80,8 +82,9 @@ public class Producto {
         this.fechaActualizacion = LocalDateTime.now();
     }
 
-    // ✅ NUEVO: Método helper para calcular stock total
+    // ✅ Método helper para calcular stock total
     public void calcularStockTotal() {
+        // Si es servicio, el stock debería ser irrelevante, pero por seguridad sumamos lo que haya (probablemente 0)
         this.stockActual = productosAlmacen.stream()
                 .filter(pa -> pa.getActivo())
                 .mapToInt(ProductoAlmacen::getStock)

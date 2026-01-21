@@ -21,6 +21,10 @@ public class Pago {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal monto;
 
+    // ✅ NUEVO: Moneda del pago (PEN/USD) - Soluciona el error setMoneda
+    @Column(length = 3, nullable = false)
+    private String moneda;
+
     @Column(name = "fecha_pago", nullable = false)
     private LocalDateTime fechaPago;
 
@@ -28,19 +32,22 @@ public class Pago {
     @Column(name = "metodo_pago", nullable = false)
     private MetodoPago metodoPago;
 
-    // Relación con la Venta (Muchos pagos pertenecen a una venta)
-    @ManyToOne
+    // ✅ NUEVO: Referencia (Nro Operación, Yape ID, etc.) - Soluciona el error setReferencia
+    @Column(length = 100)
+    private String referencia;
+
+    // Relación con Venta
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "venta_id", nullable = false)
     private Venta venta;
 
-    // ✅ NUEVO: Cuenta donde entró el dinero de ESTA amortización
-    // (Ej: Cliente viene 15 días después y paga por Yape)
-    @ManyToOne
+    // Cuenta destino
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cuenta_destino_id", nullable = true)
     private CuentaBancaria cuentaDestino;
 
     @PrePersist
     protected void onCreate() {
-        fechaPago = LocalDateTime.now();
+        if (fechaPago == null) fechaPago = LocalDateTime.now();
     }
 }

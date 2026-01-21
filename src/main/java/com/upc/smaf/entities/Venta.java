@@ -33,24 +33,19 @@ public class Venta {
     @Column(name = "tipo_cliente", nullable = false)
     private TipoCliente tipoCliente;
 
-    // Define si es CONTADO o CREDITO
+    // CONTADO o CREDITO
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_pago", nullable = false)
     private TipoPago tipoPago;
 
-    // Método de pago principal (o de la inicial si es crédito)
-    @Enumerated(EnumType.STRING)
-    @Column(name = "metodo_pago", nullable = false)
-    private MetodoPago metodoPago;
-
-    // --- CAMPOS DE PAGO MIXTO ---
-    @Column(name = "pago_efectivo", precision = 10, scale = 2)
-    private BigDecimal pagoEfectivo;
-
-    @Column(name = "pago_transferencia", precision = 10, scale = 2)
-    private BigDecimal pagoTransferencia;
+    // --- YA NO NECESITAMOS ESTOS CAMPOS FIJOS ---
+    // private MetodoPago metodoPago;  <-- SE VA
+    // private BigDecimal pagoEfectivo; <-- SE VA
+    // private BigDecimal pagoTransferencia; <-- SE VA
+    // private CuentaBancaria cuentaBancaria; <-- SE VA (Ahora está en cada Pago)
 
     // --- CAMPOS DE CRÉDITO ---
+    // El monto inicial es calculado sumando los pagos realizados al momento de la venta
     @Column(name = "monto_inicial", precision = 10, scale = 2)
     private BigDecimal montoInicial;
 
@@ -65,7 +60,7 @@ public class Venta {
 
     // --- CAMPOS DE MONEDA Y DOCUMENTO ---
     @Column(length = 3)
-    private String moneda;
+    private String moneda; // Moneda de la VENTA (Total a pagar)
 
     @Column(name = "tipo_cambio", precision = 10, scale = 4)
     private BigDecimal tipoCambio;
@@ -94,19 +89,12 @@ public class Venta {
     private EstadoVenta estado;
 
     // --- RELACIONES ---
-
-    // Detalles de productos vendidos
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DetalleVenta> detalles = new ArrayList<>();
 
-    // Historial de Pagos / Amortizaciones
+    // ✅ AQUÍ ESTÁ LA CLAVE: Lista de todos los pagos (Iniciales y futuros)
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Pago> pagos = new ArrayList<>();
-
-    // ✅ NUEVO: Cuenta donde entró el dinero HOY (Total o Inicial)
-    @ManyToOne
-    @JoinColumn(name = "cuenta_bancaria_id", nullable = true)
-    private CuentaBancaria cuentaBancaria;
 
     // --- AUDITORÍA ---
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
@@ -115,12 +103,10 @@ public class Venta {
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion;
 
-    // --- MÉTODOS DE CICLO DE VIDA ---
     @PrePersist
     protected void onCreate() {
         fechaCreacion = LocalDateTime.now();
         fechaActualizacion = LocalDateTime.now();
-
         if (montoInicial == null) montoInicial = BigDecimal.ZERO;
         if (saldoPendiente == null) saldoPendiente = BigDecimal.ZERO;
         if (numeroCuotas == null) numeroCuotas = 0;
@@ -131,7 +117,7 @@ public class Venta {
         fechaActualizacion = LocalDateTime.now();
     }
 
-    // --- MÉTODOS AUXILIARES ---
+    // Helpers
     public void agregarDetalle(DetalleVenta detalle) {
         detalles.add(detalle);
         detalle.setVenta(this);
