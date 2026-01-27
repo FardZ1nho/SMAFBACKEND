@@ -4,8 +4,6 @@ import com.upc.smaf.dtos.request.CompraRequestDTO;
 import com.upc.smaf.dtos.response.CompraDetalleResponseDTO;
 import com.upc.smaf.dtos.response.CompraResponseDTO;
 import com.upc.smaf.entities.*;
-import com.upc.smaf.entities.TipoCompra;
-import com.upc.smaf.entities.TipoComprobante;
 import com.upc.smaf.repositories.*;
 import com.upc.smaf.serviceinterface.CompraService;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -26,9 +25,10 @@ public class CompraServiceImpl implements CompraService {
     private final ProveedorRepository proveedorRepository;
     private final ProductoRepository productoRepository;
     private final AlmacenRepository almacenRepository;
-
-    // ✅ 1. INYECCIÓN DEL REPOSITORIO DE IMPORTACIONES
     private final ImportacionRepository importacionRepository;
+
+    // ✅ Repositorios necesarios para pagos
+    private final CuentaBancariaRepository cuentaRepository;
 
     @Override
     @Transactional
@@ -37,27 +37,22 @@ public class CompraServiceImpl implements CompraService {
         Proveedor proveedor = proveedorRepository.findById(request.getProveedorId())
                 .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
 
-        // 2. Convertir Enums (Validación estricta)
-        TipoCompra tipoCompra;
-        try {
-            tipoCompra = TipoCompra.valueOf(request.getTipoCompra());
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Tipo de compra inválido (Debe ser BIEN o SERVICIO)");
-        }
+        // 2. Enums
+        TipoCompra tipoCompra = TipoCompra.valueOf(request.getTipoCompra());
+        TipoComprobante tipoComprobante = TipoComprobante.valueOf(request.getTipoComprobante());
 
-        TipoComprobante tipoComprobante;
-        try {
-            tipoComprobante = TipoComprobante.valueOf(request.getTipoComprobante());
-        } catch (IllegalArgumentException e) {
-            throw new RuntimeException("Tipo de comprobante inválido");
-        }
-
-        // 3. Crear Cabecera (Compra)
+        // 3. Crear Cabecera
         Compra compra = new Compra();
         compra.setTipoCompra(tipoCompra);
         compra.setTipoComprobante(tipoComprobante);
+        compra.setTipoPago(request.getTipoPago());
+
         compra.setSerie(request.getSerie());
         compra.setNumero(request.getNumero());
+
+        // ✅ AHORA SÍ: GUARDAMOS EL CÓDIGO DE IMPORTACIÓN
+        compra.setCodImportacion(request.getCodImportacion());
+
         compra.setFechaEmision(request.getFechaEmision());
         compra.setFechaVencimiento(request.getFechaVencimiento());
         compra.setProveedor(proveedor);
@@ -65,7 +60,6 @@ public class CompraServiceImpl implements CompraService {
         compra.setTipoCambio(request.getTipoCambio());
         compra.setObservaciones(request.getObservaciones());
 
-        // MONTOS E IMPUESTOS
         compra.setSubTotal(request.getSubTotal());
         compra.setIgv(request.getIgv());
         compra.setTotal(request.getTotal());
@@ -75,82 +69,97 @@ public class CompraServiceImpl implements CompraService {
         compra.setDetraccionMonto(request.getDetraccionMonto());
         compra.setRetencion(request.getRetencion());
 
-        // Guardamos cabecera primero para obtener el ID
+        // ====================================================
+        // ✅ 4. PROCESAMIENTO DE PAGOS
+        // ====================================================
+        BigDecimal totalPagadoNormalizado = BigDecimal.ZERO;
+
+        if (request.getPagos() != null && !request.getPagos().isEmpty()) {
+            for (CompraRequestDTO.PagoCompraRequestDTO pagoDTO : request.getPagos()) {
+                PagoCompra pago = new PagoCompra();
+                pago.setMonto(pagoDTO.getMonto());
+                pago.setMoneda(pagoDTO.getMoneda());
+                pago.setMetodoPago(pagoDTO.getMetodoPago());
+                pago.setFechaPago(LocalDateTime.now());
+                pago.setReferencia(pagoDTO.getReferencia());
+
+                if (pagoDTO.getCuentaOrigenId() != null) {
+                    CuentaBancaria cuenta = cuentaRepository.findById(pagoDTO.getCuentaOrigenId())
+                            .orElseThrow(() -> new RuntimeException("Cuenta de origen no encontrada"));
+                    pago.setCuentaOrigen(cuenta);
+                }
+
+                // Normalizar monto a la moneda de la compra para calcular deuda
+                BigDecimal montoNorm = normalizarMonto(pago.getMonto(), pago.getMoneda(), compra.getMoneda(), compra.getTipoCambio());
+                totalPagadoNormalizado = totalPagadoNormalizado.add(montoNorm);
+
+                compra.agregarPago(pago); // Vinculación bidireccional
+            }
+        }
+
+        compra.setMontoPagadoInicial(totalPagadoNormalizado);
+
+        // Calcular Saldo
+        BigDecimal saldo = compra.getTotal().subtract(totalPagadoNormalizado);
+        if (saldo.compareTo(BigDecimal.ZERO) < 0) saldo = BigDecimal.ZERO;
+        compra.setSaldoPendiente(saldo);
+
+        // Validar y Asignar Estado
+        if (compra.getTipoPago() == TipoPago.CONTADO) {
+            // Tolerancia de 0.10 céntimos
+            if (compra.getSaldoPendiente().compareTo(new BigDecimal("0.10")) > 0) {
+                throw new RuntimeException("Compra al CONTADO debe ser pagada en su totalidad.");
+            }
+            compra.setEstado(EstadoCompra.COMPLETADA);
+        } else {
+            compra.setEstado(saldo.compareTo(BigDecimal.ZERO) <= 0 ? EstadoCompra.COMPLETADA : EstadoCompra.REGISTRADA);
+        }
+
         Compra savedCompra = compraRepository.save(compra);
 
         // ====================================================
-        // ✅ 2. LÓGICA AUTOMÁTICA DE IMPORTACIÓN
+        // 5. IMPORTACIÓN AUTOMÁTICA
         // ====================================================
         if (savedCompra.getTipoComprobante() == TipoComprobante.FACTURA_COMERCIAL) {
             Importacion imp = new Importacion();
-            imp.setCompra(savedCompra); // Relacionamos con la compra recién creada
-            imp.setEstado(EstadoImportacion.ORDENADO); // Estado inicial
-
-            // Inicializamos costos en 0 para evitar nulos
+            imp.setCompra(savedCompra);
+            imp.setEstado(EstadoImportacion.ORDENADO);
             imp.setCostoFlete(BigDecimal.ZERO);
             imp.setCostoSeguro(BigDecimal.ZERO);
             imp.setImpuestosAduanas(BigDecimal.ZERO);
-            imp.setGastosOperativos(BigDecimal.ZERO); // O setOtrosGastos según tu entidad final
-
+            imp.setGastosOperativos(BigDecimal.ZERO);
             importacionRepository.save(imp);
         }
-        // ====================================================
 
-        // 4. Procesar Detalles
+        // 6. PROCESAR DETALLES Y STOCK
         if (request.getDetalles() != null) {
             for (CompraRequestDTO.DetalleRequestDTO detReq : request.getDetalles()) {
-
-                // Buscar Producto
                 Producto producto = productoRepository.findById(detReq.getProductoId())
-                        .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detReq.getProductoId()));
+                        .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
-                // Crear Entidad Detalle
                 CompraDetalle detalle = new CompraDetalle();
                 detalle.setCompra(savedCompra);
                 detalle.setProducto(producto);
-                detalle.setCantidad(detReq.getCantidad());
-                detalle.setPrecioUnitario(detReq.getPrecioUnitario()); // Precio Base (Sin IGV)
+                detalle.setCantidad(detReq.getCantidad() != null ? detReq.getCantidad() : 0);
+                detalle.setPrecioUnitario(detReq.getPrecioUnitario());
                 detalle.calcularImporte();
 
-                // ====================================================
-                // 🚀 LÓGICA SIMPLIFICADA (ACTUALIZACIÓN DE PRECIOS)
-                // ====================================================
                 if (tipoCompra == TipoCompra.BIEN) {
-
-                    // A. Validar Almacén
-                    if (detReq.getAlmacenId() == null) {
-                        throw new RuntimeException("Para compra de BIENES, el almacén es obligatorio.");
-                    }
+                    if (detReq.getAlmacenId() == null) throw new RuntimeException("Almacén obligatorio para Bienes");
                     Almacen almacen = almacenRepository.findById(detReq.getAlmacenId().longValue())
                             .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
                     detalle.setAlmacen(almacen);
 
-                    // B. Actualizar Stock Físico (Suma simple)
+                    // Stock
                     int stockActual = producto.getStockActual() != null ? producto.getStockActual() : 0;
-                    int nuevoStock = stockActual + detReq.getCantidad().intValue();
-                    producto.setStockActual(nuevoStock);
+                    producto.setStockActual(stockActual + detReq.getCantidad());
 
-                    // C. ACTUALIZACIÓN DE PRECIOS DIRECTA (Sin Promedios)
-                    BigDecimal precioBaseCompra = detReq.getPrecioUnitario();
-                    BigDecimal factorIGV = new BigDecimal("1.18");
-
-                    // Calculamos: Precio Base * 1.18
-                    BigDecimal costoConIGV = precioBaseCompra.multiply(factorIGV).setScale(2, RoundingMode.HALF_UP);
-
-                    // -> SOBRESCRIBIMOS EL COSTO TOTAL CON EL ÚLTIMO PRECIO (CON IGV)
+                    // Costos
+                    BigDecimal costoConIGV = detReq.getPrecioUnitario().multiply(new BigDecimal("1.18")).setScale(2, RoundingMode.HALF_UP);
                     producto.setCostoTotal(costoConIGV);
-
-                    // -> También actualizamos el precio china (referencia base sin IGV)
-                    producto.setPrecioChina(precioBaseCompra);
-
+                    producto.setPrecioChina(detReq.getPrecioUnitario());
                     productoRepository.save(producto);
-
-                } else {
-                    // SI ES SERVICIO
-                    detalle.setAlmacen(null);
                 }
-                // ====================================================
-
                 detalleRepository.save(detalle);
             }
         }
@@ -158,94 +167,127 @@ public class CompraServiceImpl implements CompraService {
         return obtenerCompra(savedCompra.getId());
     }
 
+    // ✅ Método para Amortizar Deuda
+    @Override
+    @Transactional
+    public CompraResponseDTO registrarAmortizacion(Integer compraId, BigDecimal monto, MetodoPago metodo, Integer cuentaOrigenId, String referencia) {
+        Compra compra = compraRepository.findById(compraId)
+                .orElseThrow(() -> new RuntimeException("Compra no encontrada"));
+
+        if (compra.getSaldoPendiente().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Esta compra ya está pagada totalmente.");
+        }
+
+        PagoCompra pago = new PagoCompra();
+        pago.setMonto(monto);
+        pago.setMoneda(compra.getMoneda());
+        pago.setMetodoPago(metodo);
+        pago.setFechaPago(LocalDateTime.now());
+        pago.setReferencia(referencia);
+
+        if (cuentaOrigenId != null) {
+            CuentaBancaria cuenta = cuentaRepository.findById(cuentaOrigenId)
+                    .orElseThrow(() -> new RuntimeException("Cuenta no encontrada"));
+            pago.setCuentaOrigen(cuenta);
+        }
+
+        compra.agregarPago(pago);
+
+        // Actualizar saldo
+        compra.setSaldoPendiente(compra.getSaldoPendiente().subtract(monto));
+
+        if (compra.getSaldoPendiente().compareTo(BigDecimal.ZERO) <= 0) {
+            compra.setSaldoPendiente(BigDecimal.ZERO);
+            compra.setEstado(EstadoCompra.COMPLETADA);
+        }
+
+        Compra saved = compraRepository.save(compra);
+        return mapToResponseDTO(saved);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public CompraResponseDTO obtenerCompra(Integer id) {
-        Compra compra = compraRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Compra no encontrada"));
-        return mapToResponseDTO(compra);
+        return mapToResponseDTO(compraRepository.findById(id).orElseThrow(() -> new RuntimeException("No encontrado")));
     }
 
-    @Override
-    public List<CompraResponseDTO> listarTodas() {
-        return compraRepository.findAll().stream()
-                .map(this::mapToResponseDTO)
-                .collect(Collectors.toList());
+    @Override public List<CompraResponseDTO> listarTodas() { return compraRepository.findAll().stream().map(this::mapToResponseDTO).collect(Collectors.toList()); }
+    @Override public List<CompraResponseDTO> listarPorProveedor(Integer pid) { return compraRepository.findByProveedorId(pid).stream().map(this::mapToResponseDTO).collect(Collectors.toList()); }
+    @Override public List<CompraResponseDTO> buscarPorNumero(String num) { return compraRepository.buscarPorNumero(num).stream().map(this::mapToResponseDTO).collect(Collectors.toList()); }
+
+    // --- HELPERS ---
+    private BigDecimal normalizarMonto(BigDecimal montoPago, String monedaPago, String monedaCompra, BigDecimal tipoCambio) {
+        if (monedaPago.equals(monedaCompra)) return montoPago;
+        if ("USD".equals(monedaPago) && "PEN".equals(monedaCompra)) return montoPago.multiply(tipoCambio).setScale(2, RoundingMode.HALF_UP);
+        if ("PEN".equals(monedaPago) && "USD".equals(monedaCompra)) {
+            if (tipoCambio.compareTo(BigDecimal.ZERO) == 0) return montoPago;
+            return montoPago.divide(tipoCambio, 2, RoundingMode.HALF_UP);
+        }
+        return montoPago;
     }
 
-    @Override
-    public List<CompraResponseDTO> listarPorProveedor(Integer proveedorId) {
-        return compraRepository.findByProveedorId(proveedorId).stream()
-                .map(this::mapToResponseDTO)
-                .collect(Collectors.toList());
-    }
+    private CompraResponseDTO mapToResponseDTO(Compra c) {
+        CompraResponseDTO d = new CompraResponseDTO();
+        d.setId(c.getId());
+        d.setTipoCompra(c.getTipoCompra().name());
+        d.setTipoComprobante(c.getTipoComprobante().name());
+        d.setTipoPago(c.getTipoPago().name());
+        d.setEstado(c.getEstado().name());
+        d.setSerie(c.getSerie());
+        d.setNumero(c.getNumero());
 
-    @Override
-    public List<CompraResponseDTO> buscarPorNumero(String numero) {
-        return compraRepository.buscarPorNumero(numero).stream()
-                .map(this::mapToResponseDTO)
-                .collect(Collectors.toList());
-    }
+        // ✅ AHORA SÍ: DEVOLVEMOS EL CÓDIGO DE IMPORTACIÓN AL FRONTEND
+        d.setCodImportacion(c.getCodImportacion());
 
-    // --- MAPEO DE ENTIDAD A DTO ---
-    private CompraResponseDTO mapToResponseDTO(Compra compra) {
-        CompraResponseDTO res = new CompraResponseDTO();
-        res.setId(compra.getId());
+        d.setFechaEmision(c.getFechaEmision());
+        d.setFechaVencimiento(c.getFechaVencimiento());
+        d.setFechaRegistro(c.getFechaRegistro());
 
-        res.setTipoCompra(compra.getTipoCompra().name());
-        res.setTipoComprobante(compra.getTipoComprobante().name());
-
-        res.setSerie(compra.getSerie());
-        res.setNumero(compra.getNumero());
-        res.setFechaEmision(compra.getFechaEmision());
-        res.setFechaVencimiento(compra.getFechaVencimiento());
-        res.setFechaRegistro(compra.getFechaRegistro());
-
-        if (compra.getProveedor() != null) {
-            res.setNombreProveedor(compra.getProveedor().getNombre());
-            res.setRucProveedor(compra.getProveedor().getRuc());
+        if(c.getProveedor() != null) {
+            d.setNombreProveedor(c.getProveedor().getNombre());
+            d.setRucProveedor(c.getProveedor().getRuc());
         }
 
-        res.setMoneda(compra.getMoneda());
-        res.setTipoCambio(compra.getTipoCambio());
-        res.setObservaciones(compra.getObservaciones());
+        d.setMoneda(c.getMoneda());
+        d.setTipoCambio(c.getTipoCambio());
+        d.setSubTotal(c.getSubTotal());
+        d.setIgv(c.getIgv());
+        d.setTotal(c.getTotal());
+        d.setMontoPagadoInicial(c.getMontoPagadoInicial());
+        d.setSaldoPendiente(c.getSaldoPendiente());
+        d.setObservaciones(c.getObservaciones());
 
-        res.setSubTotal(compra.getSubTotal());
-        res.setIgv(compra.getIgv());
-        res.setTotal(compra.getTotal());
-
-        res.setPercepcion(compra.getPercepcion());
-        res.setDetraccionPorcentaje(compra.getDetraccionPorcentaje());
-        res.setDetraccionMonto(compra.getDetraccionMonto());
-        res.setRetencion(compra.getRetencion());
-
-        if (compra.getDetalles() != null) {
-            List<CompraDetalleResponseDTO> detallesDTO = compra.getDetalles().stream()
-                    .map(det -> {
-                        CompraDetalleResponseDTO d = new CompraDetalleResponseDTO();
-                        d.setId(det.getId());
-
-                        if (det.getProducto() != null) {
-                            d.setProductoId(det.getProducto().getId());
-                            d.setNombreProducto(det.getProducto().getNombre());
-                            d.setCodigoProducto(det.getProducto().getCodigo());
-                        }
-
-                        if (det.getAlmacen() != null) {
-                            d.setAlmacenId(det.getAlmacen().getId().intValue());
-                            d.setNombreAlmacen(det.getAlmacen().getNombre());
-                        }
-
-                        d.setCantidad(det.getCantidad());
-                        d.setPrecioUnitario(det.getPrecioUnitario());
-                        d.setImporteTotal(det.getImporteTotal());
-
-                        return d;
-                    }).collect(Collectors.toList());
-
-            res.setDetalles(detallesDTO);
+        if (c.getDetalles() != null) {
+            d.setDetalles(c.getDetalles().stream().map(det -> {
+                CompraDetalleResponseDTO dr = new CompraDetalleResponseDTO();
+                dr.setId(det.getId());
+                if(det.getProducto()!=null) {
+                    dr.setProductoId(det.getProducto().getId());
+                    dr.setNombreProducto(det.getProducto().getNombre());
+                }
+                dr.setCantidad(det.getCantidad());
+                dr.setPrecioUnitario(det.getPrecioUnitario());
+                dr.setImporteTotal(det.getImporteTotal());
+                return dr;
+            }).collect(Collectors.toList()));
         }
 
-        return res;
+        // ✅ MAPEO DE PAGOS AL FRONTEND
+        if (c.getPagos() != null) {
+            d.setPagos(c.getPagos().stream().map(p -> {
+                CompraResponseDTO.PagoCompraResponseDTO pr = new CompraResponseDTO.PagoCompraResponseDTO();
+                pr.setId(p.getId());
+                pr.setMonto(p.getMonto());
+                pr.setMoneda(p.getMoneda());
+                pr.setMetodoPago(p.getMetodoPago().name());
+                pr.setFechaPago(p.getFechaPago().toString());
+                pr.setReferencia(p.getReferencia());
+                if(p.getCuentaOrigen() != null) {
+                    pr.setNombreCuentaOrigen(p.getCuentaOrigen().getNombre() + " (" + p.getCuentaOrigen().getBanco() + ")");
+                }
+                return pr;
+            }).collect(Collectors.toList()));
+        }
+        return d;
     }
 }

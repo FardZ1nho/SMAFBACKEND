@@ -50,38 +50,45 @@ public class ImportacionServiceImpl implements ImportacionService {
         Importacion imp = importacionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Importación no encontrada"));
 
-        // --- 1. ACTUALIZAR SEGUIMIENTO Y FECHAS ---
+        // --- 1. ACTUALIZAR SEGUIMIENTO Y FECHAS CRÍTICAS ---
         if(request.getNumeroDua() != null) imp.setNumeroDua(request.getNumeroDua());
         if(request.getTrackingNumber() != null) imp.setTrackingNumber(request.getTrackingNumber());
-        if(request.getFechaEstimadaLlegada() != null) imp.setFechaEstimadaLlegada(request.getFechaEstimadaLlegada());
-        if(request.getFechaNacionalizacion() != null) imp.setFechaNacionalizacion(request.getFechaNacionalizacion());
 
-        // --- 2. ACTUALIZAR LOGÍSTICA (NUEVO) ---
+        if(request.getFechaCutOffDocumental() != null) imp.setFechaCutOffDocumental(request.getFechaCutOffDocumental());
+        if(request.getFechaCutOffFisico() != null) imp.setFechaCutOffFisico(request.getFechaCutOffFisico());
+        if(request.getFechaSalidaEstimada() != null) imp.setFechaSalidaEstimada(request.getFechaSalidaEstimada());
+        if(request.getFechaEstimadaLlegada() != null) imp.setFechaEstimadaLlegada(request.getFechaEstimadaLlegada());
+        if(request.getFechaLlegadaReal() != null) imp.setFechaLlegadaReal(request.getFechaLlegadaReal());
+
+        // --- 2. ACTUALIZAR CIERRE Y PENALIDADES ---
+        if(request.getFechaLevanteAutorizado() != null) imp.setFechaLevanteAutorizado(request.getFechaLevanteAutorizado());
+        if(request.getFechaNacionalizacion() != null) imp.setFechaNacionalizacion(request.getFechaNacionalizacion());
+        if(request.getDiasLibres() != null) imp.setDiasLibres(request.getDiasLibres());
+        if(request.getFechaLimiteDevolucion() != null) imp.setFechaLimiteDevolucion(request.getFechaLimiteDevolucion());
+
+        // --- 3. ACTUALIZAR LOGÍSTICA ---
         if(request.getPaisOrigen() != null) imp.setPaisOrigen(request.getPaisOrigen());
         if(request.getPuertoEmbarque() != null) imp.setPuertoEmbarque(request.getPuertoEmbarque());
         if(request.getPuertoLlegada() != null) imp.setPuertoLlegada(request.getPuertoLlegada());
         if(request.getIncoterm() != null) imp.setIncoterm(request.getIncoterm());
         if(request.getTipoTransporte() != null) imp.setTipoTransporte(request.getTipoTransporte());
         if(request.getNavieraAerolinea() != null) imp.setNavieraAerolinea(request.getNavieraAerolinea());
+        if(request.getNumeroViaje() != null) imp.setNumeroViaje(request.getNumeroViaje());
         if(request.getNumeroContenedor() != null) imp.setNumeroContenedor(request.getNumeroContenedor());
 
-        // --- 3. ACTUALIZAR COSTOS ---
-        // Se actualizan si vienen en el request (si es null, se mantiene el anterior)
+        // --- 4. ACTUALIZAR COSTOS ---
         if(request.getCostoFlete() != null) imp.setCostoFlete(request.getCostoFlete());
         if(request.getCostoSeguro() != null) imp.setCostoSeguro(request.getCostoSeguro());
         if(request.getImpuestosAduanas() != null) imp.setImpuestosAduanas(request.getImpuestosAduanas());
         if(request.getGastosOperativos() != null) imp.setGastosOperativos(request.getGastosOperativos());
-
-        // Nuevo costo nacional
         if(request.getCostoTransporteLocal() != null) imp.setCostoTransporteLocal(request.getCostoTransporteLocal());
 
-        // --- 4. ACTUALIZAR ESTADO ---
+        // --- 5. ACTUALIZAR ESTADO ---
         if(request.getEstado() != null) imp.setEstado(request.getEstado());
 
         return mapToDTO(importacionRepository.save(imp));
     }
 
-    // --- MAPEO MANUAL ENTITY -> DTO ---
     private ImportacionResponseDTO mapToDTO(Importacion entity) {
         ImportacionResponseDTO dto = new ImportacionResponseDTO();
         dto.setId(entity.getId());
@@ -90,16 +97,26 @@ public class ImportacionServiceImpl implements ImportacionService {
         dto.setEstado(entity.getEstado());
         dto.setNumeroDua(entity.getNumeroDua());
         dto.setTrackingNumber(entity.getTrackingNumber());
-        dto.setFechaEstimadaLlegada(entity.getFechaEstimadaLlegada());
-        dto.setFechaNacionalizacion(entity.getFechaNacionalizacion());
 
-        // Logística (NUEVO)
+        dto.setFechaCutOffDocumental(entity.getFechaCutOffDocumental());
+        dto.setFechaCutOffFisico(entity.getFechaCutOffFisico());
+        dto.setFechaSalidaEstimada(entity.getFechaSalidaEstimada());
+        dto.setFechaEstimadaLlegada(entity.getFechaEstimadaLlegada());
+        dto.setFechaLlegadaReal(entity.getFechaLlegadaReal());
+
+        dto.setFechaLevanteAutorizado(entity.getFechaLevanteAutorizado());
+        dto.setFechaNacionalizacion(entity.getFechaNacionalizacion());
+        dto.setDiasLibres(entity.getDiasLibres());
+        dto.setFechaLimiteDevolucion(entity.getFechaLimiteDevolucion());
+
+        // Logística
         dto.setPaisOrigen(entity.getPaisOrigen());
         dto.setPuertoEmbarque(entity.getPuertoEmbarque());
         dto.setPuertoLlegada(entity.getPuertoLlegada());
         dto.setIncoterm(entity.getIncoterm());
         dto.setTipoTransporte(entity.getTipoTransporte());
         dto.setNavieraAerolinea(entity.getNavieraAerolinea());
+        dto.setNumeroViaje(entity.getNumeroViaje());
         dto.setNumeroContenedor(entity.getNumeroContenedor());
 
         // Costos
@@ -107,11 +124,10 @@ public class ImportacionServiceImpl implements ImportacionService {
         dto.setCostoSeguro(entity.getCostoSeguro());
         dto.setImpuestosAduanas(entity.getImpuestosAduanas());
         dto.setGastosOperativos(entity.getGastosOperativos());
-        dto.setCostoTransporteLocal(entity.getCostoTransporteLocal()); // Nuevo
+        dto.setCostoTransporteLocal(entity.getCostoTransporteLocal());
 
         dto.setFechaCreacion(entity.getFechaCreacion());
 
-        // Mapear Compra Básica (Datos necesarios para la tabla visual)
         if(entity.getCompra() != null) {
             Compra c = entity.getCompra();
             CompraResponseDTO cDto = new CompraResponseDTO();
@@ -121,6 +137,7 @@ public class ImportacionServiceImpl implements ImportacionService {
             cDto.setFechaEmision(c.getFechaEmision());
             cDto.setTotal(c.getTotal());
             cDto.setMoneda(c.getMoneda());
+            cDto.setCodImportacion(c.getCodImportacion());
 
             if(c.getProveedor() != null) {
                 cDto.setNombreProveedor(c.getProveedor().getNombre());

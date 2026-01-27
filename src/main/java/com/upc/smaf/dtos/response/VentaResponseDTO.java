@@ -20,15 +20,8 @@ public class VentaResponseDTO {
     private TipoCliente tipoCliente;
 
     private TipoPago tipoPago;
-    private MetodoPago metodoPago;
 
-    // ✅ NUEVO: Información de la cuenta destino
-    private Integer cuentaBancariaId;
-    private String nombreCuentaBancaria; // Ej: "Yape Patrick"
-
-    private BigDecimal pagoEfectivo;
-    private BigDecimal pagoTransferencia;
-
+    // Campos financieros
     private BigDecimal montoInicial;
     private Integer numeroCuotas;
     private BigDecimal montoCuota;
@@ -46,13 +39,24 @@ public class VentaResponseDTO {
     private String notas;
     private EstadoVenta estado;
 
-    // Lista de detalles
+    // Lista de productos
     private List<DetalleVentaResponseDTO> detalles;
 
-    // Lista de pagos (historial de amortizaciones)
-    // Es útil incluir esto si quieres ver el historial completo en el detalle
-    // private List<PagoResponseDTO> pagos;
+    // ✅ CORRECCIÓN CRÍTICA: Descomentamos la lista de pagos para enviarla a Angular
+    private List<PagoResponseDTO> pagos;
 
     private LocalDateTime fechaCreacion;
     private LocalDateTime fechaActualizacion;
+
+    // ✅ Clase interna para estructurar el pago en la respuesta
+    @Data
+    public static class PagoResponseDTO {
+        private Integer id;
+        private BigDecimal monto;
+        private String moneda;
+        private MetodoPago metodoPago;
+        private String fechaPago;
+        private String referencia;
+        private String nombreCuentaDestino; // Opcional, si quieres mostrar banco
+    }
 }

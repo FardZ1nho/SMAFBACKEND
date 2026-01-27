@@ -11,8 +11,6 @@ import java.time.LocalDateTime;
 @Data
 public class ImportacionResponseDTO {
     private Integer id;
-
-    // ✅ Incluimos la compra completa para mostrar Proveedor, Fecha Compra, etc.
     private CompraResponseDTO compra;
 
     // --- Seguimiento ---
@@ -20,24 +18,37 @@ public class ImportacionResponseDTO {
     private String numeroDua;
     private String trackingNumber;
 
-    private LocalDate fechaEstimadaLlegada;
+    // --- Fechas Críticas ---
+    private LocalDateTime fechaCutOffDocumental;
+    private LocalDate fechaCutOffFisico;
+    private LocalDate fechaSalidaEstimada; // ETD
+    private LocalDate fechaEstimadaLlegada; // ETA
+    private LocalDate fechaLlegadaReal; // ATA
+
+    // --- Cierre Aduanas ---
+    private LocalDateTime fechaLevanteAutorizado;
     private LocalDate fechaNacionalizacion;
 
-    // --- Logística (NUEVOS) ---
+    // --- Logística ---
     private String paisOrigen;
     private String puertoEmbarque;
     private String puertoLlegada;
     private Incoterm incoterm;
     private TipoTransporte tipoTransporte;
     private String navieraAerolinea;
+    private String numeroViaje;
     private String numeroContenedor;
+
+    // --- Penalidades ---
+    private Integer diasLibres;
+    private LocalDate fechaLimiteDevolucion;
 
     // --- Costos ---
     private BigDecimal costoFlete;
     private BigDecimal costoSeguro;
     private BigDecimal impuestosAduanas;
     private BigDecimal gastosOperativos;
-    private BigDecimal costoTransporteLocal; // Nuevo
+    private BigDecimal costoTransporteLocal;
 
     private LocalDateTime fechaCreacion;
 }

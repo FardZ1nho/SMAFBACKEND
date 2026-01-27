@@ -10,39 +10,57 @@ import java.util.List;
 public class CompraResponseDTO {
     private Integer id;
 
-    // Datos Principales
-    private String tipoCompra;      // BIEN o SERVICIO
-    private String tipoComprobante; // Factura, Boleta...
+    private String tipoCompra;
+    private String tipoComprobante;
+    private String tipoPago; // CONTADO / CREDITO
+    private String estado;
+
     private String serie;
     private String numero;
 
-    // Fechas
+    // ✅ NUEVO: ID DE IMPORTACIÓN (Para mostrarlo en el detalle o lista)
+    private String codImportacion;
+
     private LocalDate fechaEmision;
     private LocalDate fechaVencimiento;
     private LocalDateTime fechaRegistro;
 
-    // Proveedor
     private String nombreProveedor;
     private String rucProveedor;
 
-    // Moneda
     private String moneda;
     private BigDecimal tipoCambio;
 
-    // ✅ TOTALES Y MONTOS (BigDecimal)
+    // Totales
     private BigDecimal subTotal;
     private BigDecimal igv;
     private BigDecimal total;
 
-    // ✅ IMPUESTOS ESPECÍFICOS
+    // ✅ SALDOS
+    private BigDecimal montoPagadoInicial;
+    private BigDecimal saldoPendiente;
+
+    // Impuestos
     private BigDecimal percepcion;
     private BigDecimal detraccionPorcentaje;
     private BigDecimal detraccionMonto;
     private BigDecimal retencion;
 
     private String observaciones;
-    private String estado; // Activo/Anulado
 
-    // Detalles
     private List<CompraDetalleResponseDTO> detalles;
+
+    // ✅ LISTA DE PAGOS REALIZADOS
+    private List<PagoCompraResponseDTO> pagos;
+
+    @Data
+    public static class PagoCompraResponseDTO {
+        private Integer id;
+        private BigDecimal monto;
+        private String moneda;
+        private String metodoPago;
+        private String fechaPago;
+        private String referencia;
+        private String nombreCuentaOrigen;
+    }
 }

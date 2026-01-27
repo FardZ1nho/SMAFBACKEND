@@ -1,5 +1,6 @@
 package com.upc.smaf.repositories;
 
+import com.upc.smaf.dtos.ReporteMetodoPagoDTO;
 import com.upc.smaf.entities.Venta;
 import com.upc.smaf.entities.EstadoVenta;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,39 +14,18 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface VentaRepository extends JpaRepository<Venta, Integer> {
-
-    Optional<Venta> findByCodigo(String codigo);
-
+public interface VentaRepository extends JpaRepository<Venta, Integer> {Optional<Venta> findByCodigo(String codigo);
     List<Venta> findByEstado(EstadoVenta estado);
-
     List<Venta> findByFechaVentaBetween(LocalDateTime inicio, LocalDateTime fin);
-
     @Query("SELECT v FROM Venta v WHERE v.nombreCliente LIKE %:nombre%")
     List<Venta> buscarPorCliente(@Param("nombre") String nombre);
-
     @Query("SELECT COUNT(v) FROM Venta v WHERE v.estado = :estado")
     Long contarPorEstado(@Param("estado") EstadoVenta estado);
-
-    // ==========================================
-    // ✅ NUEVOS MÉTODOS AGREGADOS (Para Documentos)
-    // ==========================================
-
-    // Buscar una venta específica por su número de comprobante (Ej: "F001-00025")
     Optional<Venta> findByNumeroDocumento(String numeroDocumento);
-
-    // Verificar si ya existe un número de documento (Útil para validar duplicados antes de guardar)
     boolean existsByNumeroDocumento(String numeroDocumento);
-
-    // Filtrar por tipo (Ej: Traer todas las "FACTURA" o "BOLETA")
     List<Venta> findByTipoDocumento(String tipoDocumento);
 
-    // ==========================================
-    // FIN NUEVOS MÉTODOS
-    // ==========================================
-
-    // ========== ESTADÍSTICAS Y REPORTES ==========
-
+    // ========== ESTADÍSTICAS SIMPLES ==========
     @Query("SELECT COALESCE(SUM(v.total), 0) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin")
     BigDecimal sumarVentasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
@@ -58,21 +38,46 @@ public interface VentaRepository extends JpaRepository<Venta, Integer> {
     @Query("SELECT COUNT(v) FROM Venta v WHERE v.fechaVenta BETWEEN :inicio AND :fin AND v.estado = 'COMPLETADA'")
     Integer contarVentasCompletadasEntreFechas(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
 
-    @Query(value =
-            "SELECT " +
-                    "   DATE(v.fecha_venta) as fecha, " +
-                    "   TO_CHAR(v.fecha_venta, 'Day') as diaSemana, " +
-                    "   COALESCE(SUM(v.total), 0) as totalVentas, " +
-                    "   COUNT(v.id) as cantidadVentas " +
-                    "FROM ventas v " +
-                    "WHERE v.fecha_venta >= :inicioSemana " +
-                    "AND v.fecha_venta < :finSemana " +
-                    "AND v.estado = 'COMPLETADA' " +
-                    "GROUP BY DATE(v.fecha_venta), TO_CHAR(v.fecha_venta, 'Day') " +
-                    "ORDER BY DATE(v.fecha_venta)",
-            nativeQuery = true)
-    List<Object[]> obtenerVentasPorDiaSemanaRaw(
-            @Param("inicioSemana") LocalDateTime inicioSemana,
-            @Param("finSemana") LocalDateTime finSemana
+// ==========================================
+    // 📈 CONSULTAS PARA GRÁFICOS (RAW DATE)
+    // ==========================================
+
+    // 1. Agrupar por DÍA (Devuelve java.sql.Date)
+    @Query(value = "SELECT DATE(v.fecha_venta) as fecha, " +
+            "COALESCE(SUM(v.total), 0) as total, " +
+            "COUNT(v.id) as cantidad " +
+            "FROM ventas v " +
+            "WHERE v.fecha_venta >= :inicio AND v.fecha_venta <= :fin " +
+            "AND v.estado = 'COMPLETADA' " +
+            "GROUP BY DATE(v.fecha_venta) " +
+            "ORDER BY DATE(v.fecha_venta) ASC", nativeQuery = true)
+    List<Object[]> obtenerVentasPorDiaRaw(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
+
+    // 2. Agrupar por MES (Devuelve número de mes)
+    @Query(value = "SELECT TO_CHAR(v.fecha_venta, 'MM') as mes, " +
+            "COALESCE(SUM(v.total), 0) as total, " +
+            "COUNT(v.id) as cantidad " +
+            "FROM ventas v " +
+            "WHERE v.fecha_venta >= :inicio AND v.fecha_venta <= :fin " +
+            "AND v.estado = 'COMPLETADA' " +
+            "GROUP BY TO_CHAR(v.fecha_venta, 'MM') " +
+            "ORDER BY mes ASC", nativeQuery = true)
+    List<Object[]> obtenerVentasPorMesRaw(@Param("inicio") LocalDateTime inicio, @Param("fin") LocalDateTime fin);
+
+    // ==========================================
+    // 📊 REPORTE MÉTODOS DE PAGO (DTO CLASE)
+    // ==========================================
+    @Query("SELECT new com.upc.smaf.dtos.ReporteMetodoPagoDTO(" +
+            "p.metodoPago, SUM(p.monto), COUNT(p)) " +
+            "FROM Venta v " +
+            "JOIN v.pagos p " +
+            "WHERE v.fechaVenta BETWEEN :inicio AND :fin " +
+            "AND v.estado <> 'ANULADA' " +
+            "AND v.estado <> 'CANCELADA' " +
+            "GROUP BY p.metodoPago " +
+            "ORDER BY SUM(p.monto) DESC")
+    List<ReporteMetodoPagoDTO> obtenerReporteMetodosPago(
+            @Param("inicio") LocalDateTime inicio,
+            @Param("fin") LocalDateTime fin
     );
 }

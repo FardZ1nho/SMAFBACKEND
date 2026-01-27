@@ -1,12 +1,12 @@
 package com.upc.smaf.entities;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore; // ✅ 1. IMPORTANTE: Agregar este import
 
 import java.io.Serializable;
 
 @Entity
 @Table(name = "roles", uniqueConstraints = {@UniqueConstraint(columnNames = {"user_id", "rol"})})
-
 public class Role implements Serializable {
 
     @Id
@@ -17,6 +17,7 @@ public class Role implements Serializable {
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore // ✅ 2. IMPORTANTE: Esta anotación rompe el bucle infinito
     private Users user;
 
     public Users getUser() {
@@ -42,5 +43,4 @@ public class Role implements Serializable {
     public void setRol(String rol) {
         this.rol = rol;
     }
-
 }

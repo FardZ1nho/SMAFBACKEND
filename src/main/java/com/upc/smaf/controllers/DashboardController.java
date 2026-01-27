@@ -1,14 +1,21 @@
 package com.upc.smaf.controllers;
 
+import com.upc.smaf.dtos.GraficoVentasDTO;
+import com.upc.smaf.dtos.ReporteMetodoPagoDTO;
+import com.upc.smaf.dtos.response.DashboardAlertaDTO; // ✅ IMPORTAR ESTO
 import com.upc.smaf.dtos.response.DashboardResponseDTO;
-import com.upc.smaf.dtos.VentasSemanaDTO;
 import com.upc.smaf.dtos.response.ProductoVendidoDTO;
+import com.upc.smaf.repositories.VentaRepository;
 import com.upc.smaf.serviceinterface.DashboardService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 @RestController
@@ -18,83 +25,99 @@ import java.util.List;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final VentaRepository ventaRepository;
 
     /**
-     * Obtiene todas las métricas del dashboard en una sola llamada
-     * GET /dashboard/metricas
+     * ✅ Endpoint PRINCIPAL para el gráfico dinámico.
+     * Soporta filtros: ?periodo=SEMANA, ?periodo=MES, ?periodo=ANIO
      */
+    @GetMapping("/ventas-grafico")
+    public ResponseEntity<List<GraficoVentasDTO>> obtenerVentasGrafico(
+            @RequestParam(defaultValue = "SEMANA") String periodo) {
+        List<GraficoVentasDTO> datos = dashboardService.obtenerVentasGrafico(periodo);
+        return ResponseEntity.ok(datos);
+    }
+
+    /**
+     * Endpoint de compatibilidad (Legacy).
+     */
+    @GetMapping("/ventas-semana")
+    public ResponseEntity<List<GraficoVentasDTO>> obtenerVentasSemana() {
+        return ResponseEntity.ok(dashboardService.obtenerVentasGrafico("SEMANA"));
+    }
+
+    // ==========================================
+    // MÉTRICAS GENERALES Y KPI (Tarjetas Superiores)
+    // ==========================================
+
     @GetMapping("/metricas")
     public ResponseEntity<DashboardResponseDTO> obtenerMetricas() {
-        DashboardResponseDTO metricas = dashboardService.obtenerMetricasDashboard();
-        return ResponseEntity.ok(metricas);
+        return ResponseEntity.ok(dashboardService.obtenerMetricasDashboard());
     }
 
-    /**
-     * Obtiene las ventas del mes actual
-     * GET /dashboard/ventas-mes
-     */
     @GetMapping("/ventas-mes")
     public ResponseEntity<BigDecimal> obtenerVentasMes() {
-        BigDecimal ventasMes = dashboardService.obtenerVentasMesActual();
-        return ResponseEntity.ok(ventasMes);
+        return ResponseEntity.ok(dashboardService.obtenerVentasMesActual());
     }
 
-    /**
-     * Obtiene los productos más vendidos
-     * GET /dashboard/productos-mas-vendidos?limit=5
-     */
+    @GetMapping("/ventas-hoy")
+    public ResponseEntity<BigDecimal> obtenerVentasHoy() {
+        return ResponseEntity.ok(dashboardService.obtenerVentasHoy());
+    }
+
+    @GetMapping("/productos-stock")
+    public ResponseEntity<Integer> obtenerProductosEnStock() {
+        return ResponseEntity.ok(dashboardService.obtenerTotalProductosActivos());
+    }
+
+    @GetMapping("/clientes-activos")
+    public ResponseEntity<Long> obtenerClientesActivos() {
+        return ResponseEntity.ok(dashboardService.obtenerClientesActivos());
+    }
+
+    @GetMapping("/porcentaje-ventas")
+    public ResponseEntity<Double> obtenerPorcentajeCambioVentas() {
+        return ResponseEntity.ok(dashboardService.calcularPorcentajeCambioVentas());
+    }
+
+    // ==========================================
+    // LISTAS Y REPORTES
+    // ==========================================
+
     @GetMapping("/productos-mas-vendidos")
     public ResponseEntity<List<ProductoVendidoDTO>> obtenerProductosMasVendidos(
             @RequestParam(defaultValue = "5") int limit) {
-        List<ProductoVendidoDTO> productos = dashboardService.obtenerProductosMasVendidos(limit);
-        return ResponseEntity.ok(productos);
+        return ResponseEntity.ok(dashboardService.obtenerProductosMasVendidos(limit));
     }
 
     /**
-     * Obtiene las ventas de hoy
-     * GET /dashboard/ventas-hoy
+     * ✅ NUEVO ENDPOINT: Próximas Llegadas (Para el Widget de Alertas)
      */
-    @GetMapping("/ventas-hoy")
-    public ResponseEntity<BigDecimal> obtenerVentasHoy() {
-        BigDecimal ventasHoy = dashboardService.obtenerVentasHoy();
-        return ResponseEntity.ok(ventasHoy);
+    @GetMapping("/proximas-llegadas")
+    public ResponseEntity<List<DashboardAlertaDTO>> obtenerProximasLlegadas() {
+        return ResponseEntity.ok(dashboardService.obtenerProximasLlegadas());
     }
 
     /**
-     * Obtiene la cantidad total de productos en stock
-     * GET /dashboard/productos-stock
+     * Reporte para el Gráfico Circular (Donut) de Métodos de Pago.
      */
-    @GetMapping("/productos-stock")
-    public ResponseEntity<Integer> obtenerProductosEnStock() {
-        Integer productosStock = dashboardService.obtenerTotalProductosActivos();
-        return ResponseEntity.ok(productosStock);
-    }
+    @GetMapping("/metodos-pago")
+    public ResponseEntity<List<ReporteMetodoPagoDTO>> obtenerReporteMetodosPago(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaInicio,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaFin
+    ) {
+        LocalDateTime inicio;
+        LocalDateTime fin;
 
-    /**
-     * Obtiene la cantidad de clientes activos
-     * GET /dashboard/clientes-activos
-     */
-    @GetMapping("/clientes-activos")
-    public ResponseEntity<Long> obtenerClientesActivos() {
-        Long clientesActivos = dashboardService.obtenerClientesActivos();
-        return ResponseEntity.ok(clientesActivos);
-    }
+        if (fechaInicio == null) {
+            inicio = LocalDate.now().atStartOfDay();
+            fin = LocalDate.now().atTime(LocalTime.MAX);
+        } else {
+            inicio = fechaInicio.atStartOfDay();
+            fin = (fechaFin != null) ? fechaFin.atTime(LocalTime.MAX) : fechaInicio.atTime(LocalTime.MAX);
+        }
 
-    /**
-     * Obtiene el porcentaje de cambio de ventas vs mes anterior
-     * GET /dashboard/porcentaje-ventas
-     */
-    @GetMapping("/porcentaje-ventas")
-    public ResponseEntity<Double> obtenerPorcentajeCambioVentas() {
-        Double porcentaje = dashboardService.calcularPorcentajeCambioVentas();
-        return ResponseEntity.ok(porcentaje);
-    }
-
-
-
-    @GetMapping("/ventas-semana")
-    public ResponseEntity<List<VentasSemanaDTO>> obtenerVentasSemanaActual() {
-        List<VentasSemanaDTO> ventasSemana = dashboardService.obtenerVentasSemanaActual();
-        return ResponseEntity.ok(ventasSemana);
+        List<ReporteMetodoPagoDTO> reporte = ventaRepository.obtenerReporteMetodosPago(inicio, fin);
+        return ResponseEntity.ok(reporte);
     }
 }

@@ -19,29 +19,45 @@ public class Importacion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    // ✅ RELACIÓN CLAVE: Esta importación pertenece a UNA compra específica
     @OneToOne
     @JoinColumn(name = "compra_id", nullable = false, unique = true)
     private Compra compra;
 
-    // --- ESTADO Y SEGUIMIENTO ---
+    // --- ESTADO Y SEGUIMIENTO GENERAL ---
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EstadoImportacion estado;
 
     @Column(name = "numero_dua", length = 50)
-    private String numeroDua; // Declaración Única de Aduanas / DAM
+    private String numeroDua;
 
     @Column(name = "tracking_number", length = 50)
-    private String trackingNumber; // BL o Guía Aérea
+    private String trackingNumber;
+
+    // --- FECHAS CRÍTICAS (CUT-OFFS & TRAVESÍA) ---
+    @Column(name = "fecha_cutoff_documental")
+    private LocalDateTime fechaCutOffDocumental; // Deadline docs
+
+    @Column(name = "fecha_cutoff_fisico")
+    private LocalDate fechaCutOffFisico; // Deadline puerto (Stacking)
+
+    @Column(name = "fecha_salida_estimada")
+    private LocalDate fechaSalidaEstimada; // ETD
 
     @Column(name = "fecha_estimada_llegada")
-    private LocalDate fechaEstimadaLlegada;
+    private LocalDate fechaEstimadaLlegada; // ETA
+
+    @Column(name = "fecha_llegada_real")
+    private LocalDate fechaLlegadaReal; // ATA (Llegada Real)
+
+    // --- CIERRE EN DESTINO (ADUANAS) ---
+    @Column(name = "fecha_levante_autorizado")
+    private LocalDateTime fechaLevanteAutorizado; // Momento exacto de liberación
 
     @Column(name = "fecha_nacionalizacion")
-    private LocalDate fechaNacionalizacion;
+    private LocalDate fechaNacionalizacion; // Fecha contable
 
-    // --- LOGÍSTICA Y TRANSPORTE (NUEVOS) ---
+    // --- LOGÍSTICA Y TRANSPORTE ---
     @Column(name = "pais_origen")
     private String paisOrigen;
 
@@ -53,34 +69,43 @@ public class Importacion {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "incoterm")
-    private Incoterm incoterm; // FOB, CIF, EXW...
+    private Incoterm incoterm;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_transporte")
-    private TipoTransporte tipoTransporte; // MARITIMO, AEREO...
+    private TipoTransporte tipoTransporte;
 
     @Column(name = "naviera_aerolinea")
     private String navieraAerolinea;
 
+    @Column(name = "numero_viaje")
+    private String numeroViaje; // Vessel / Voyage
+
     @Column(name = "numero_contenedor")
     private String numeroContenedor;
 
-    // --- COSTOS INTERNACIONALES ---
+    // --- PENALIDADES Y DEVOLUCIÓN ---
+    @Column(name = "dias_libres")
+    private Integer diasLibres; // Free days
+
+    @Column(name = "fecha_limite_devolucion")
+    private LocalDate fechaLimiteDevolucion; // Deadline devolución vacío
+
+    // --- COSTOS ---
     @Column(name = "costo_flete", precision = 10, scale = 2)
     private BigDecimal costoFlete;
 
     @Column(name = "costo_seguro", precision = 10, scale = 2)
     private BigDecimal costoSeguro;
 
-    // --- COSTOS NACIONALES ---
     @Column(name = "impuestos_aduanas", precision = 10, scale = 2)
-    private BigDecimal impuestosAduanas; // Ad Valorem + IGV Importación
+    private BigDecimal impuestosAduanas;
 
     @Column(name = "gastos_operativos", precision = 10, scale = 2)
-    private BigDecimal gastosOperativos; // Agente de aduana, almacenaje, estiba
+    private BigDecimal gastosOperativos;
 
     @Column(name = "costo_transporte_local", precision = 10, scale = 2)
-    private BigDecimal costoTransporteLocal; // Flete interno hasta tu almacén
+    private BigDecimal costoTransporteLocal;
 
     // --- AUDITORÍA ---
     @Column(name = "fecha_creacion", updatable = false)
@@ -93,14 +118,11 @@ public class Importacion {
     protected void onCreate() {
         fechaCreacion = LocalDateTime.now();
         fechaActualizacion = LocalDateTime.now();
-
-        // Inicializamos valores en 0 para evitar nulls en cálculos matemáticos
         if (costoFlete == null) costoFlete = BigDecimal.ZERO;
         if (costoSeguro == null) costoSeguro = BigDecimal.ZERO;
         if (impuestosAduanas == null) impuestosAduanas = BigDecimal.ZERO;
         if (gastosOperativos == null) gastosOperativos = BigDecimal.ZERO;
         if (costoTransporteLocal == null) costoTransporteLocal = BigDecimal.ZERO;
-
         if (estado == null) estado = EstadoImportacion.ORDENADO;
     }
 
