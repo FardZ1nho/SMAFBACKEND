@@ -27,12 +27,12 @@ public class CompraController {
         try {
             return new ResponseEntity<>(compraService.registrarCompra(request), HttpStatus.CREATED);
         } catch (RuntimeException e) {
+            e.printStackTrace(); // Útil para ver errores en consola
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
     }
 
     // ✅ ENDPOINT PARA PAGAR DEUDA (AMORTIZAR)
-    // Ejemplo: POST /compras/10/pagos?monto=500&metodo=TRANSFERENCIA&cuentaId=1
     @PostMapping("/{id}/pagos")
     public ResponseEntity<?> registrarPago(
             @PathVariable Integer id,
@@ -69,5 +69,12 @@ public class CompraController {
     @GetMapping("/buscar")
     public ResponseEntity<List<CompraResponseDTO>> buscarPorNumero(@RequestParam String numero) {
         return ResponseEntity.ok(compraService.buscarPorNumero(numero));
+    }
+
+    // ✅ NUEVO: Listar facturas por Código de Importación (Ej: "2026-01")
+    // Esto sirve para ver qué facturas están "pendientes de agrupar" o ya agrupadas bajo un código
+    @GetMapping("/importacion/{codImportacion}")
+    public ResponseEntity<List<CompraResponseDTO>> listarPorImportacion(@PathVariable String codImportacion) {
+        return ResponseEntity.ok(compraService.listarPorCodigoImportacion(codImportacion));
     }
 }

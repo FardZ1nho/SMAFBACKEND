@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -30,7 +31,6 @@ public class Compra {
     @Column(name = "tipo_comprobante", nullable = false, length = 30)
     private TipoComprobante tipoComprobante;
 
-    // ✅ NUEVO: TIPO DE PAGO (CONTADO / CREDITO)
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_pago", nullable = false)
     private TipoPago tipoPago;
@@ -67,7 +67,7 @@ public class Compra {
     @Column(precision = 12, scale = 2)
     private BigDecimal total = BigDecimal.ZERO;
 
-    // --- SALDOS Y DEUDA (Similar a Ventas) ---
+    // --- SALDOS Y DEUDA ---
     @Column(name = "monto_pagado_inicial", precision = 12, scale = 2)
     private BigDecimal montoPagadoInicial = BigDecimal.ZERO;
 
@@ -91,14 +91,48 @@ public class Compra {
     private String observaciones;
 
     @Enumerated(EnumType.STRING)
-    private EstadoCompra estado = EstadoCompra.REGISTRADA; // Crea este Enum o usa String
+    private EstadoCompra estado = EstadoCompra.REGISTRADA;
+
+    // =================================================================
+    // ✅ NUEVOS CAMPOS PARA EL MÓDULO DE IMPORTACIONES
+    // =================================================================
+
+    // 1. El texto que escribe el usuario (Ej: "2026-01") - Sirve para buscar
     @Column(name = "cod_importacion", length = 50)
     private String codImportacion;
+
+    // 2. La relación real con la carpeta padre (Foreign Key)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "importacion_id")
+    @JsonIgnore // Para evitar traer toda la importación al listar compras simples
+    private Importacion importacion;
+
+    // 3. Datos necesarios para el cálculo (Prorrateo)
+    @Column(name = "peso_neto_kg", precision = 12, scale = 2)
+    private BigDecimal pesoNetoKg = BigDecimal.ZERO; // Necesario para distribuir flete
+
+    @Column(name = "bultos")
+    private Integer bultos = 0;
+
+    // 4. Resultados del Costeo (Aquí se guardará cuánto le tocó pagar a esta factura)
+    @Column(name = "prorrateo_flete", precision = 12, scale = 2)
+    private BigDecimal prorrateoFlete = BigDecimal.ZERO;
+
+    @Column(name = "prorrateo_seguro", precision = 12, scale = 2)
+    private BigDecimal prorrateoSeguro = BigDecimal.ZERO;
+
+    @Column(name = "prorrateo_gastos_aduanas", precision = 12, scale = 2)
+    private BigDecimal prorrateoGastosAduanas = BigDecimal.ZERO; // Agente, Almacén, etc.
+
+    @Column(name = "costo_total_importacion", precision = 12, scale = 2)
+    private BigDecimal costoTotalImportacion = BigDecimal.ZERO; // Total Factura + Gastos Prorrateados
+
+    // =================================================================
+
     // --- RELACIONES ---
     @OneToMany(mappedBy = "compra", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CompraDetalle> detalles = new ArrayList<>();
 
-    // ✅ LISTA DE PAGOS (Cascade ALL y EAGER para que carguen siempre)
     @OneToMany(mappedBy = "compra", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<PagoCompra> pagos = new ArrayList<>();
 
@@ -117,7 +151,6 @@ public class Compra {
         if (this.saldoPendiente == null) this.saldoPendiente = BigDecimal.ZERO;
     }
 
-    // Helper para relación bidireccional
     public void agregarPago(PagoCompra pago) {
         pagos.add(pago);
         pago.setCompra(this);

@@ -4,184 +4,217 @@ import com.upc.smaf.dtos.GraficoVentasDTO;
 import com.upc.smaf.dtos.response.DashboardAlertaDTO;
 import com.upc.smaf.dtos.response.DashboardResponseDTO;
 import com.upc.smaf.dtos.response.ProductoVendidoDTO;
+import com.upc.smaf.entities.Compra;
 import com.upc.smaf.entities.Importacion;
 import com.upc.smaf.repositories.*;
 import com.upc.smaf.serviceinterface.DashboardService;
 import lombok.RequiredArgsConstructor;
-// ✅ CORRECCIÓN DE IMPORT: Usar Spring Data
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
-import java.time.*;
-import java.time.format.TextStyle;
-import java.util.*;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardServiceImpl implements DashboardService {
 
-    private final VentaRepository ventaRepository;
-    private final ProductoRepository productoRepository;
-    private final ClienteRepository clienteRepository;
-    private final DetalleVentaRepository detalleVentaRepository;
     private final ImportacionRepository importacionRepository;
+    private final CompraRepository compraRepository;
+    private final ProductoRepository productoRepository;
+    private final VentaRepository ventaRepository;
+    private final ClienteRepository clienteRepository;
 
-    private final Locale SPANISH_LOCALE = new Locale("es", "ES");
-
+    // ==========================================
+    // 1. MÉTRICAS GENERALES
+    // ==========================================
     @Override
     public DashboardResponseDTO obtenerMetricasDashboard() {
         DashboardResponseDTO dashboard = new DashboardResponseDTO();
-        dashboard.setVentasMes(obtenerVentasMesActual());
-        dashboard.setVentasHoy(obtenerVentasHoy());
-        dashboard.setProductosStock(obtenerTotalProductosActivos());
-        dashboard.setClientesActivos(obtenerClientesActivos());
-        dashboard.setPorcentajeCambioVentasMes(calcularPorcentajeCambioVentas());
-        dashboard.setPorcentajeCambioProductos(calcularPorcentajeCambioProductos());
-        dashboard.setPorcentajeCambioClientes(calcularPorcentajeCambioClientes());
-        dashboard.setPorcentajeCambioVentasHoy(calcularPorcentajeCambioVentasHoy());
-        dashboard.setProductosStockBajo(obtenerProductosStockBajo());
-        dashboard.setCantidadVentasHoy(contarVentasHoy());
-        dashboard.setCantidadVentasMes(contarVentasMes());
-        dashboard.setValorInventario(obtenerValorInventario());
+
+        LocalDateTime inicioHoy = LocalDate.now().atStartOfDay();
+        LocalDateTime finHoy = LocalDate.now().atTime(LocalTime.MAX);
+        LocalDateTime inicioMes = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+        LocalDateTime finMes = LocalDate.now().atTime(LocalTime.MAX);
+        LocalDateTime inicioMesAnt = LocalDate.now().minusMonths(1).withDayOfMonth(1).atStartOfDay();
+        LocalDateTime finMesAnt = inicioMesAnt.plusMonths(1).minusSeconds(1);
+
+        BigDecimal ventasHoy = ventaRepository.sumarVentasCompletadasEntreFechas(inicioHoy, finHoy);
+        BigDecimal ventasMes = ventaRepository.sumarVentasCompletadasEntreFechas(inicioMes, finMes);
+        BigDecimal ventasMesAnt = ventaRepository.sumarVentasCompletadasEntreFechas(inicioMesAnt, finMesAnt);
+
+        dashboard.setVentasHoy(ventasHoy);
+        dashboard.setVentasMes(ventasMes);
+
+        Integer cantVentasHoy = ventaRepository.contarVentasCompletadasEntreFechas(inicioHoy, finHoy);
+        Integer cantVentasMes = ventaRepository.contarVentasCompletadasEntreFechas(inicioMes, finMes);
+
+        dashboard.setCantidadVentasHoy(cantVentasHoy != null ? cantVentasHoy : 0);
+        dashboard.setCantidadVentasMes(cantVentasMes != null ? cantVentasMes : 0);
+
+        dashboard.setClientesActivos(clienteRepository.count());
+        dashboard.setProductosStock((int) productoRepository.count());
+
+        BigDecimal valorInv = productoRepository.findAll().stream()
+                .map(p -> {
+                    BigDecimal costo = p.getCostoTotal() != null ? p.getCostoTotal() : BigDecimal.ZERO;
+                    BigDecimal stock = new BigDecimal(p.getStockActual() != null ? p.getStockActual() : 0);
+                    return costo.multiply(stock);
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        dashboard.setValorInventario(valorInv);
+
+        dashboard.setPorcentajeCambioVentasMes(calcularVariacion(ventasMesAnt, ventasMes));
+        dashboard.setPorcentajeCambioClientes(0.0);
+        dashboard.setPorcentajeCambioProductos(0.0);
+        dashboard.setPorcentajeCambioVentasHoy(0.0);
+
         return dashboard;
     }
 
-    @Override
-    public List<DashboardAlertaDTO> obtenerProximasLlegadas() {
-        // Pedimos solo las top 5 más cercanas
-        Pageable top5 = PageRequest.of(0, 5);
-
-        // ✅ CORRECCIÓN: Usar la instancia 'importacionRepository' (minúscula)
-        List<Importacion> lista = importacionRepository.findProximasLlegadas(top5);
-
-        return lista.stream().map(i -> {
-            DashboardAlertaDTO dto = new DashboardAlertaDTO();
-            dto.setIdImportacion(i.getId());
-
-            if (i.getCompra() != null) {
-                dto.setCodigoImportacion(i.getCompra().getSerie() + "-" + i.getCompra().getNumero());
-                if (i.getCompra().getProveedor() != null) {
-                    dto.setProveedor(i.getCompra().getProveedor().getNombre());
-                }
-            }
-
-            // ✅ CORRECCIÓN: Usar el getter getFechaEstimadaLlegada()
-            dto.setFechaEta(i.getFechaEstimadaLlegada());
-            dto.setEstado(i.getEstado().name());
-
-            // Calcular días restantes
-            if (i.getFechaEstimadaLlegada() != null) {
-                long dias = java.time.temporal.ChronoUnit.DAYS.between(
-                        java.time.LocalDate.now(),
-                        i.getFechaEstimadaLlegada()
-                );
-                dto.setDiasRestantes(dias);
-            } else {
-                dto.setDiasRestantes(0L); // Fallback si es nula
-            }
-
-            return dto;
-        }).collect(Collectors.toList());
+    private double calcularVariacion(BigDecimal anterior, BigDecimal actual) {
+        if (anterior == null || anterior.compareTo(BigDecimal.ZERO) == 0) return 100.0;
+        if (actual == null) actual = BigDecimal.ZERO;
+        BigDecimal diff = actual.subtract(anterior);
+        return diff.divide(anterior, 2, RoundingMode.HALF_UP).multiply(new BigDecimal(100)).doubleValue();
     }
 
     // ==========================================
-    // 📈 LÓGICA GRÁFICO
+    // 2. MÉTODOS SIMPLES
+    // ==========================================
+    @Override
+    public BigDecimal obtenerVentasMesActual() {
+        LocalDateTime inicio = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+        return ventaRepository.sumarVentasCompletadasEntreFechas(inicio, LocalDateTime.now());
+    }
+
+    @Override
+    public BigDecimal obtenerVentasHoy() {
+        LocalDateTime inicio = LocalDate.now().atStartOfDay();
+        return ventaRepository.sumarVentasCompletadasEntreFechas(inicio, LocalDateTime.now());
+    }
+
+    @Override
+    public Integer obtenerTotalProductosActivos() {
+        return (int) productoRepository.count();
+    }
+
+    @Override
+    public Long obtenerClientesActivos() {
+        return clienteRepository.count();
+    }
+
+    // ==========================================
+    // 3. GRÁFICOS DINÁMICOS (LUNES-DOMINGO FIJO)
     // ==========================================
     @Override
     public List<GraficoVentasDTO> obtenerVentasGrafico(String periodo) {
-        LocalDateTime hoy = LocalDateTime.now();
-        List<GraficoVentasDTO> resultadoFinal = new ArrayList<>();
+        LocalDateTime fin = LocalDate.now().atTime(LocalTime.MAX);
+        LocalDateTime inicio;
+        List<Object[]> resultadosRaw;
+        List<GraficoVentasDTO> grafico = new ArrayList<>();
 
-        if ("ANIO".equals(periodo)) {
-            // --- Lógica AÑO (12 Meses) ---
-            LocalDateTime inicio = LocalDate.now().withDayOfYear(1).atStartOfDay();
-            List<Object[]> dataBD = ventaRepository.obtenerVentasPorMesRaw(inicio, hoy);
+        if ("SEMANA".equalsIgnoreCase(periodo)) {
+            // Lunes de esta semana
+            LocalDate hoy = LocalDate.now();
+            LocalDate lunesEstaSemana = hoy.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
-            Map<Integer, GraficoVentasDTO> mapaMeses = new HashMap<>();
-            for (Object[] fila : dataBD) {
-                int mes = Integer.parseInt((String) fila[0]);
-                BigDecimal total = (BigDecimal) fila[1];
-                Long cant = ((Number) fila[2]).longValue();
-                mapaMeses.put(mes, new GraficoVentasDTO("", total, cant));
+            inicio = lunesEstaSemana.atStartOfDay();
+            LocalDate domingoEstaSemana = lunesEstaSemana.plusDays(6);
+            LocalDateTime finSemana = domingoEstaSemana.atTime(LocalTime.MAX);
+
+            resultadosRaw = ventaRepository.obtenerVentasPorDiaRaw(inicio, finSemana);
+
+            var mapVentas = resultadosRaw.stream().collect(Collectors.toMap(
+                    row -> row[0].toString(),
+                    row -> row
+            ));
+
+            DateTimeFormatter diaFormatter = DateTimeFormatter.ofPattern("EEEE", new Locale("es", "ES"));
+
+            for (int i = 0; i < 7; i++) {
+                LocalDate fecha = lunesEstaSemana.plusDays(i);
+                String keyFecha = fecha.toString();
+
+                BigDecimal total = BigDecimal.ZERO;
+                Long cantidad = 0L;
+
+                if (mapVentas.containsKey(keyFecha)) {
+                    Object[] data = mapVentas.get(keyFecha);
+                    total = (BigDecimal) data[1];
+                    cantidad = ((Number) data[2]).longValue();
+                }
+
+                String label = fecha.format(diaFormatter).toUpperCase();
+                grafico.add(new GraficoVentasDTO(label, total, cantidad));
             }
+
+        } else if ("MES".equalsIgnoreCase(periodo)) {
+            inicio = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+            resultadosRaw = ventaRepository.obtenerVentasPorDiaRaw(inicio, fin);
+
+            BigDecimal[] totalesSemana = {BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO};
+            long[] countsSemana = {0, 0, 0, 0};
+
+            for (Object[] row : resultadosRaw) {
+                Date fechaSql = (Date) row[0];
+                LocalDate fecha = fechaSql.toLocalDate();
+                BigDecimal total = (BigDecimal) row[1];
+                Long cant = ((Number) row[2]).longValue();
+
+                int dia = fecha.getDayOfMonth();
+                int index = (dia <= 7) ? 0 : (dia <= 14) ? 1 : (dia <= 21) ? 2 : 3;
+
+                totalesSemana[index] = totalesSemana[index].add(total);
+                countsSemana[index] += cant;
+            }
+
+            for (int i = 0; i < 4; i++) {
+                grafico.add(new GraficoVentasDTO("S" + (i + 1), totalesSemana[i], countsSemana[i]));
+            }
+
+        } else if ("ANIO".equalsIgnoreCase(periodo)) {
+            inicio = LocalDate.now().withDayOfYear(1).atStartOfDay();
+            resultadosRaw = ventaRepository.obtenerVentasPorMesRaw(inicio, fin);
+
+            var mapMeses = new java.util.HashMap<Integer, Object[]>();
+            for (Object[] row : resultadosRaw) {
+                try {
+                    int mes = Integer.parseInt(row[0].toString());
+                    mapMeses.put(mes, row);
+                } catch (Exception e) { continue; }
+            }
+
+            String[] labelsMeses = {"ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"};
 
             for (int i = 1; i <= 12; i++) {
-                String nombreMes = Month.of(i).getDisplayName(TextStyle.FULL, SPANISH_LOCALE);
-                nombreMes = nombreMes.substring(0, 1).toUpperCase() + nombreMes.substring(1);
+                BigDecimal total = BigDecimal.ZERO;
+                Long cantidad = 0L;
 
-                if (mapaMeses.containsKey(i)) {
-                    GraficoVentasDTO dto = mapaMeses.get(i);
-                    dto.setLabel(nombreMes);
-                    resultadoFinal.add(dto);
-                } else {
-                    resultadoFinal.add(new GraficoVentasDTO(nombreMes, BigDecimal.ZERO, 0L));
+                if (mapMeses.containsKey(i)) {
+                    Object[] data = mapMeses.get(i);
+                    total = (BigDecimal) data[1];
+                    cantidad = ((Number) data[2]).longValue();
                 }
-            }
 
-        } else if ("MES".equals(periodo)) {
-            // --- LÓGICA MES (Agrupado en 4 Semanas) ---
-            LocalDateTime inicio = LocalDate.now().withDayOfMonth(1).atStartOfDay();
-            List<Object[]> dataBD = ventaRepository.obtenerVentasPorDiaRaw(inicio, hoy);
-
-            Map<Integer, GraficoVentasDTO> semanasMap = new TreeMap<>();
-            semanasMap.put(1, new GraficoVentasDTO("Semana 1", BigDecimal.ZERO, 0L));
-            semanasMap.put(2, new GraficoVentasDTO("Semana 2", BigDecimal.ZERO, 0L));
-            semanasMap.put(3, new GraficoVentasDTO("Semana 3", BigDecimal.ZERO, 0L));
-            semanasMap.put(4, new GraficoVentasDTO("Semana 4", BigDecimal.ZERO, 0L));
-
-            for (Object[] fila : dataBD) {
-                LocalDate fecha = ((Date) fila[0]).toLocalDate();
-                BigDecimal total = (BigDecimal) fila[1];
-                Long cant = ((Number) fila[2]).longValue();
-                int dia = fecha.getDayOfMonth();
-
-                int semanaIdx;
-                if (dia <= 7) semanaIdx = 1;
-                else if (dia <= 14) semanaIdx = 2;
-                else if (dia <= 21) semanaIdx = 3;
-                else semanaIdx = 4;
-
-                GraficoVentasDTO dto = semanasMap.get(semanaIdx);
-                dto.setTotal(dto.getTotal().add(total));
-                dto.setCantidad(dto.getCantidad() + cant);
-            }
-
-            resultadoFinal.addAll(semanasMap.values());
-
-        } else {
-            // --- LÓGICA SEMANA (Lunes a Domingo) ---
-            LocalDateTime inicio = LocalDate.now().with(DayOfWeek.MONDAY).atStartOfDay();
-            List<Object[]> dataBD = ventaRepository.obtenerVentasPorDiaRaw(inicio, hoy);
-
-            Map<LocalDate, GraficoVentasDTO> mapaVentas = new HashMap<>();
-            for (Object[] fila : dataBD) {
-                LocalDate fecha = ((Date) fila[0]).toLocalDate();
-                BigDecimal total = (BigDecimal) fila[1];
-                Long cant = ((Number) fila[2]).longValue();
-                mapaVentas.put(fecha, new GraficoVentasDTO("", total, cant));
-            }
-
-            LocalDate fechaIterador = inicio.toLocalDate();
-            for (int i = 0; i < 7; i++) {
-                String diaNombre = fechaIterador.getDayOfWeek().getDisplayName(TextStyle.FULL, SPANISH_LOCALE);
-                diaNombre = diaNombre.substring(0, 1).toUpperCase() + diaNombre.substring(1);
-
-                if (mapaVentas.containsKey(fechaIterador)) {
-                    GraficoVentasDTO dto = mapaVentas.get(fechaIterador);
-                    dto.setLabel(diaNombre);
-                    resultadoFinal.add(dto);
-                } else {
-                    resultadoFinal.add(new GraficoVentasDTO(diaNombre, BigDecimal.ZERO, 0L));
-                }
-                fechaIterador = fechaIterador.plusDays(1);
+                grafico.add(new GraficoVentasDTO(labelsMeses[i - 1], total, cantidad));
             }
         }
 
-        return resultadoFinal;
+        return grafico;
     }
 
     @Override
@@ -189,19 +222,82 @@ public class DashboardServiceImpl implements DashboardService {
         return obtenerVentasGrafico("SEMANA");
     }
 
-    // Métodos auxiliares
-    @Override public BigDecimal obtenerVentasMesActual() { LocalDateTime i = LocalDate.now().withDayOfMonth(1).atStartOfDay(); LocalDateTime f = LocalDate.now().atTime(LocalTime.MAX); BigDecimal t = ventaRepository.sumarVentasCompletadasEntreFechas(i, f); return t!=null?t:BigDecimal.ZERO; }
-    @Override public BigDecimal obtenerVentasHoy() { LocalDateTime i = LocalDate.now().atStartOfDay(); LocalDateTime f = LocalDate.now().atTime(LocalTime.MAX); BigDecimal t = ventaRepository.sumarVentasCompletadasEntreFechas(i, f); return t!=null?t:BigDecimal.ZERO; }
-    @Override public Integer obtenerTotalProductosActivos() { Integer t = productoRepository.contarProductosActivos(); return t!=null?t:0; }
-    @Override public Long obtenerClientesActivos() { Long t = clienteRepository.contarClientesActivos(); return t!=null?t:0L; }
-    @Override public Integer obtenerProductosStockBajo() { Integer t = productoRepository.contarProductosStockBajo(); return t!=null?t:0; }
-    @Override public Double calcularPorcentajeCambioVentas() { return 0.0; }
-    @Override public List<ProductoVendidoDTO> obtenerProductosMasVendidos(int limit) { return detalleVentaRepository.findProductosMasVendidos(limit).stream().limit(limit).collect(Collectors.toList()); }
+    // ==========================================
+    // 4. IMPORTACIONES (CORREGIDO: Muestra aunque no tenga fecha)
+    // ==========================================
+    @Override
+    public List<DashboardAlertaDTO> obtenerProximasLlegadas() {
+        List<Importacion> lista = importacionRepository.findAll().stream()
+                .filter(i -> {
+                    String estado = i.getEstado().name();
+                    boolean tieneFecha = i.getFechaEstimadaLlegada() != null;
+                    boolean estaActiva = "EN_TRANSITO".equals(estado) || "EN_ADUANAS".equals(estado);
+                    return tieneFecha || estaActiva;
+                })
+                .filter(i -> !"COMPLETADA".equals(i.getEstado().name()) && !"CANCELADA".equals(i.getEstado().name()))
+                .sorted((a, b) -> {
+                    if (a.getFechaEstimadaLlegada() == null) return 1;
+                    if (b.getFechaEstimadaLlegada() == null) return -1;
+                    return a.getFechaEstimadaLlegada().compareTo(b.getFechaEstimadaLlegada());
+                })
+                .limit(5)
+                .collect(Collectors.toList());
 
-    private Integer contarVentasHoy() { return 0; }
-    private Integer contarVentasMes() { return 0; }
-    private BigDecimal obtenerValorInventario() { return BigDecimal.ZERO; }
-    private Double calcularPorcentajeCambioProductos() { return 0.0; }
-    private Double calcularPorcentajeCambioClientes() { return 0.0; }
-    private Double calcularPorcentajeCambioVentasHoy() { return 0.0; }
+        return lista.stream().map(i -> {
+            DashboardAlertaDTO dto = new DashboardAlertaDTO();
+            dto.setIdImportacion(i.getId());
+            dto.setCodigoImportacion(i.getCodigoAgrupador());
+            dto.setFechaLlegada(i.getFechaEstimadaLlegada());
+            dto.setEstado(i.getEstado().name());
+
+            List<Compra> facturas = compraRepository.findByCodImportacion(i.getCodigoAgrupador());
+            if (facturas != null && !facturas.isEmpty()) {
+                String provs = facturas.stream()
+                        .filter(c -> c.getProveedor() != null)
+                        .map(c -> c.getProveedor().getNombre())
+                        .distinct()
+                        .collect(Collectors.joining(", "));
+                dto.setProveedores(provs.isEmpty() ? "Sin Proveedor" : provs);
+            } else {
+                dto.setProveedores("Sin Facturas");
+            }
+            return dto;
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public Double calcularPorcentajeCambioVentas() {
+        return obtenerMetricasDashboard().getPorcentajeCambioVentasMes();
+    }
+
+    @Override
+    public Integer obtenerProductosStockBajo() {
+        return (int) productoRepository.findAll().stream()
+                .filter(p -> (p.getStockActual() == null ? 0 : p.getStockActual()) < 5)
+                .count();
+    }
+
+    // ==========================================
+    // 🏆 5. PRODUCTOS MÁS VENDIDOS (CORREGIDO)
+    // ==========================================
+    @Override
+    public List<ProductoVendidoDTO> obtenerProductosMasVendidos(int limit) {
+        // Pedimos los 'limit' (ej: 5) productos con más ventas
+        Pageable pageable = PageRequest.of(0, limit);
+
+        // Llamada a la query que agregamos en VentaRepository
+        List<Object[]> resultados = ventaRepository.obtenerTopProductos(pageable);
+
+        return resultados.stream().map(fila -> {
+            String nombre = (String) fila[0];
+            Number cantidad = (Number) fila[1]; // Evita error Long/Integer
+            BigDecimal total = (BigDecimal) fila[2];
+
+            ProductoVendidoDTO dto = new ProductoVendidoDTO();
+            dto.setNombreProducto(nombre);
+            dto.setCantidad(cantidad.longValue());
+            dto.setTotal(total);
+            return dto;
+        }).collect(Collectors.toList());
+    }
 }

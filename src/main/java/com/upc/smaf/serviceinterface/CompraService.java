@@ -11,10 +11,15 @@ public interface CompraService {
 
     CompraResponseDTO registrarCompra(CompraRequestDTO request);
     CompraResponseDTO obtenerCompra(Integer id);
+
     List<CompraResponseDTO> listarTodas();
     List<CompraResponseDTO> listarPorProveedor(Integer proveedorId);
     List<CompraResponseDTO> buscarPorNumero(String numero);
 
-    // ✅ NUEVO: Registrar un pago posterior (Amortización de deuda)
+    // ✅ NUEVO: Para listar facturas que pertenecen a una importación específica
+    // Útil para ver qué facturas se van a agrupar antes de crear la carpeta
+    List<CompraResponseDTO> listarPorCodigoImportacion(String codImportacion);
+    void anularCompra(Integer id);
+    // ✅ Registrar un pago posterior (Amortización de deuda)
     CompraResponseDTO registrarAmortizacion(Integer compraId, BigDecimal monto, MetodoPago metodo, Integer cuentaOrigenId, String referencia);
 }

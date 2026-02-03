@@ -12,13 +12,20 @@ import java.util.Optional;
 @Repository
 public interface CompraRepository extends JpaRepository<Compra, Integer> {
 
-    // Buscar por serie y número (para evitar duplicados de facturas del mismo proveedor)
+    // Buscar duplicados
     Optional<Compra> findBySerieAndNumeroAndProveedorId(String serie, String numero, Integer proveedorId);
 
-    // Listar compras de un proveedor específico
+    // Listar por proveedor
     List<Compra> findByProveedorId(Integer proveedorId);
 
-    // Buscar compras por número de comprobante
+    // Búsqueda general
     @Query("SELECT c FROM Compra c WHERE c.numero LIKE %:numero%")
     List<Compra> buscarPorNumero(@Param("numero") String numero);
+
+    // ✅ NUEVO: Buscar facturas por el CÓDIGO DE TEXTO (Ej: dame todas las de "2026-01")
+    // Útil para ver qué facturas puso el usuario con ese código antes de crear la carpeta
+    List<Compra> findByCodImportacion(String codImportacion);
+
+    // ✅ NUEVO: Buscar facturas por la RELACIÓN REAL (Foreign Key)
+    List<Compra> findByImportacionId(Integer importacionId);
 }

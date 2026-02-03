@@ -1,5 +1,3 @@
-// src/main/java/com/upc/smaf/dtos/response/ProductoVendidoDTO.java
-
 package com.upc.smaf.dtos.response;
 
 import lombok.AllArgsConstructor;
@@ -11,9 +9,9 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ProductoVendidoDTO {
-    private Integer id;
-    private String nombre;
-    private String codigo;
-    private Long cantidadVendida;
-    private BigDecimal totalVentas;
+    private Integer id;           // ✅ Nuevo campo requerido por tu repositorio
+    private String nombreProducto;
+    private String codigo;        // ✅ Nuevo campo requerido por tu repositorio
+    private Long cantidad;
+    private BigDecimal total;
 }

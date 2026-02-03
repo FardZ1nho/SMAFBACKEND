@@ -1,7 +1,7 @@
 package com.upc.smaf.dtos.request;
 
-import com.upc.smaf.entities.MetodoPago;
 import com.upc.smaf.entities.TipoPago;
+import com.upc.smaf.entities.MetodoPago;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -20,7 +20,6 @@ public class CompraRequestDTO {
     @NotNull(message = "El tipo de comprobante es obligatorio")
     private String tipoComprobante;
 
-    // ✅ NUEVO: TIPO DE PAGO
     @NotNull(message = "El tipo de pago es obligatorio")
     private TipoPago tipoPago; // CONTADO o CREDITO
 
@@ -29,7 +28,6 @@ public class CompraRequestDTO {
 
     @NotNull(message = "La fecha de emisión es obligatoria")
     private LocalDate fechaEmision;
-
     private LocalDate fechaVencimiento;
 
     @NotNull(message = "El proveedor es obligatorio")
@@ -39,18 +37,31 @@ public class CompraRequestDTO {
     private BigDecimal tipoCambio;
     private String observaciones;
 
-    // Impuestos
+    // Totales
+    private BigDecimal subTotal;
+    private BigDecimal igv;
+    private BigDecimal total;
+
+    // Impuestos Específicos
     private BigDecimal percepcion;
     private BigDecimal detraccionPorcentaje;
     private BigDecimal detraccionMonto;
     private BigDecimal retencion;
 
-    // Totales
-    private BigDecimal subTotal;
-    private BigDecimal igv;
-    private BigDecimal total;
+    // =================================================================
+    // ✅ CAMPOS CLAVE PARA IMPORTACIÓN
+    // =================================================================
+
+    // Si el usuario pone "2026-01", el backend busca esa Importación y la vincula.
     private String codImportacion;
-    // ✅ NUEVO: LISTA DE PAGOS
+
+    // Vital para prorratear el flete por peso
+    private BigDecimal pesoNetoKg;
+
+    private Integer bultos;
+
+    // =================================================================
+
     @Valid
     private List<PagoCompraRequestDTO> pagos;
 
@@ -58,7 +69,6 @@ public class CompraRequestDTO {
     private List<DetalleRequestDTO> detalles;
 
     // --- CLASES INTERNAS ---
-
     @Data
     public static class PagoCompraRequestDTO {
         @NotNull
@@ -66,8 +76,8 @@ public class CompraRequestDTO {
         @NotNull @Positive
         private BigDecimal monto;
         @NotNull
-        private String moneda; // Moneda del pago
-        private Integer cuentaOrigenId; // ID de la Cuenta Bancaria de la empresa
+        private String moneda;
+        private Integer cuentaOrigenId;
         private String referencia;
     }
 

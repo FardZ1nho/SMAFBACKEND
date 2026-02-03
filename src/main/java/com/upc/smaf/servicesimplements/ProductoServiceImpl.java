@@ -4,7 +4,7 @@ import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO;
 import com.upc.smaf.dtos.request.ProductoRequestDTO;
 import com.upc.smaf.dtos.response.ProductoResponseDTO;
 import com.upc.smaf.entities.*;
-import com.upc.smaf.repositories.*; // Import all repositories
+import com.upc.smaf.repositories.*;
 import com.upc.smaf.serviceinterface.ProductoService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,22 +19,23 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductoServiceImpl implements ProductoService {
 
-    // ========== 1. DEPENDENCY INJECTION ==========
+    // ========== 1. INYECCIÓN DE DEPENDENCIAS ==========
     private final ProductoRepository productoRepository;
     private final CategoriaRepository categoriaRepository;
     private final AlmacenRepository almacenRepository;
     private final ProductoAlmacenRepository productoAlmacenRepository;
-
-    // ✅ NEW INJECTION: Needed to calculate stock in transit
     private final CompraDetalleRepository compraDetalleRepository;
 
-    // ========== 2. METHOD IMPLEMENTATION ==========
+    // ========== 2. IMPLEMENTACIÓN DE MÉTODOS ==========
 
     @Override
     @Transactional
     public ProductoResponseDTO crearProducto(ProductoRequestDTO request) {
-        if (productoRepository.existsByCodigo(request.getCodigo())) {
-            throw new RuntimeException("El código SKU ya existe");
+        // Validar que el código SKU no exista (el Internacional sí puede repetirse o ser nulo)
+        if (request.getCodigo() != null && !request.getCodigo().isEmpty()) {
+            if (productoRepository.existsByCodigo(request.getCodigo())) {
+                throw new RuntimeException("El código SKU ya existe");
+            }
         }
 
         Producto producto = new Producto();
@@ -51,6 +52,10 @@ public class ProductoServiceImpl implements ProductoService {
         }
 
         producto.setCodigo(request.getCodigo());
+
+        // ✅ CAMBIO 1: Guardar Código Internacional
+        producto.setCodigoInternacional(request.getCodigoInternacional());
+
         producto.setDescripcion(request.getDescripcion());
 
         Categoria categoria = categoriaRepository.findById(request.getIdCategoria())
@@ -61,12 +66,12 @@ public class ProductoServiceImpl implements ProductoService {
         producto.setPrecioVenta(request.getPrecioVenta());
         producto.setUnidadMedida(request.getUnidadMedida());
 
-        // Additional setters based on your DTO
         producto.setPrecioChina(request.getPrecioChina());
         producto.setCostoTotal(request.getCostoTotal());
         producto.setMoneda(request.getMoneda());
 
-        if (producto.getTipo() == TipoProducto.SERVICIO) {
+        // Inicializar stock en 0
+        if (producto.getStockActual() == null) {
             producto.setStockActual(0);
         }
 
@@ -77,12 +82,14 @@ public class ProductoServiceImpl implements ProductoService {
     @Override
     @Transactional
     public ProductoAlmacen agregarStock(ProductoAlmacenRequestDTO dto) {
+        // 1. Validar existencia
         Producto producto = productoRepository.findById(dto.getProductoId())
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
         Almacen almacen = almacenRepository.findById(dto.getAlmacenId())
                 .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
+        // 2. Buscar o crear el registro en la tabla intermedia (ProductoAlmacen)
         ProductoAlmacen pa = productoAlmacenRepository.findByProductoAndAlmacen(producto, almacen)
                 .orElseGet(() -> {
                     ProductoAlmacen nuevo = new ProductoAlmacen();
@@ -93,6 +100,7 @@ public class ProductoServiceImpl implements ProductoService {
                     return nuevo;
                 });
 
+        // 3. Actualizar stock del almacén específico
         pa.setStock(pa.getStock() + dto.getCantidad());
 
         if (dto.getUbicacionFisica() != null && !dto.getUbicacionFisica().isBlank()) {
@@ -104,10 +112,14 @@ public class ProductoServiceImpl implements ProductoService {
 
         productoAlmacenRepository.save(pa);
 
-        // Assuming Producto entity has a helper method to sum total stock
-        // If not, you should manually sum it here or use a DB trigger/query
-        // producto.calcularStockTotal();
-        // productoRepository.save(producto);
+        // 4. Actualizar la tabla padre PRODUCTO
+        List<ProductoAlmacen> todosLosStocks = productoAlmacenRepository.findByProducto(producto);
+        int stockTotalReal = todosLosStocks.stream()
+                .mapToInt(ProductoAlmacen::getStock)
+                .sum();
+
+        producto.setStockActual(stockTotalReal);
+        productoRepository.save(producto);
 
         return pa;
     }
@@ -142,14 +154,19 @@ public class ProductoServiceImpl implements ProductoService {
         Categoria categoria = categoriaRepository.findById(request.getIdCategoria())
                 .orElseThrow(() -> new RuntimeException("Categoría no encontrada"));
 
+        // Validar SKU único solo si cambió
         if (request.getCodigo() != null && !request.getCodigo().trim().isEmpty() &&
                 !request.getCodigo().equals(producto.getCodigo()) &&
                 productoRepository.findByCodigoAndActivoTrue(request.getCodigo()).isPresent()) {
-            throw new RuntimeException("Ya existe un producto activo con ese código");
+            throw new RuntimeException("Ya existe un producto activo con ese código SKU");
         }
 
         producto.setNombre(request.getNombre());
         if (request.getCodigo() != null) producto.setCodigo(request.getCodigo());
+
+        // ✅ CAMBIO 2: Actualizar Código Internacional
+        producto.setCodigoInternacional(request.getCodigoInternacional());
+
         producto.setDescripcion(request.getDescripcion());
         producto.setCategoria(categoria);
 
@@ -213,12 +230,7 @@ public class ProductoServiceImpl implements ProductoService {
         else return "ALTO";
     }
 
-    // ========== PRIVATE HELPER METHODS ==========
-
-    private String generarCodigoProducto(String nombre) {
-        String prefijo = nombre.length() >= 3 ? nombre.substring(0, 3).toUpperCase() : nombre.toUpperCase();
-        return prefijo + "-" + System.currentTimeMillis() % 10000;
-    }
+    // ========== MÉTODOS PRIVADOS DE AYUDA ==========
 
     private ProductoResponseDTO convertirAResponseDTO(Producto producto) {
         ProductoResponseDTO response = new ProductoResponseDTO();
@@ -226,11 +238,14 @@ public class ProductoServiceImpl implements ProductoService {
         response.setNombre(producto.getNombre());
         response.setCodigo(producto.getCodigo());
 
-        // Handle Enum to String conversion safely
+        // ✅ CAMBIO 3: Mapear Código Internacional a la respuesta
+        // (Asegúrate de agregar este campo en tu ProductoResponseDTO también)
+        response.setCodigoInternacional(producto.getCodigoInternacional());
+
         if (producto.getTipo() != null) {
             response.setTipo(producto.getTipo().name());
         } else {
-            response.setTipo("PRODUCTO"); // Default fallback
+            response.setTipo("PRODUCTO");
         }
 
         response.setDescripcion(producto.getDescripcion());
@@ -243,8 +258,7 @@ public class ProductoServiceImpl implements ProductoService {
         response.setStockActual(producto.getStockActual());
         response.setStockMinimo(producto.getStockMinimo());
 
-        // ✅ LOGIC TO CALCULATE IN-TRANSIT STOCK
-        // We only do this for "PRODUCTO" types, not "SERVICIO"
+        // Calcular stock en tránsito
         if (producto.getTipo() == null || producto.getTipo() == TipoProducto.PRODUCTO) {
             Integer porLlegar = compraDetalleRepository.obtenerStockPorLlegar(producto.getId());
             response.setStockPorLlegar(porLlegar != null ? porLlegar : 0);
@@ -283,7 +297,6 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private void calcularEstadoStock(ProductoResponseDTO producto) {
-        // Use stockActual (physical) for status, ignoring transit for safety
         int stock = producto.getStockActual() != null ? producto.getStockActual() : 0;
         int minimo = producto.getStockMinimo() != null ? producto.getStockMinimo() : 0;
 

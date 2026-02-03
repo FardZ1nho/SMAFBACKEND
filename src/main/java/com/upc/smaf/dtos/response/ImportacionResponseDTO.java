@@ -1,54 +1,45 @@
 package com.upc.smaf.dtos.response;
 
-import com.upc.smaf.entities.EstadoImportacion;
-import com.upc.smaf.entities.Incoterm;
-import com.upc.smaf.entities.TipoTransporte;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class ImportacionResponseDTO {
-    private Integer id;
-    private CompraResponseDTO compra;
+    private Integer id; // ✅ CORREGIDO: Integer
+    private String codigoAgrupador;
+    private String estado;
+    private String tipoTransporte;
 
-    // --- Seguimiento ---
-    private EstadoImportacion estado;
+    private LocalDate fechaEstimadaLlegada;
+    private LocalDate fechaLlegadaReal;
+
     private String numeroDua;
+    private String canal;
     private String trackingNumber;
+    private String agenteAduanas;
 
-    // --- Fechas Críticas ---
-    private LocalDateTime fechaCutOffDocumental;
-    private LocalDate fechaCutOffFisico;
-    private LocalDate fechaSalidaEstimada; // ETD
-    private LocalDate fechaEstimadaLlegada; // ETA
-    private LocalDate fechaLlegadaReal; // ATA
+    private BigDecimal totalFleteInternacional;
+    private BigDecimal totalSeguro;
+    private BigDecimal totalGastosAduana;
+    private BigDecimal totalGastosAlmacen;
+    private BigDecimal totalTransporteLocal;
+    private BigDecimal otrosGastosGlobales;
 
-    // --- Cierre Aduanas ---
-    private LocalDateTime fechaLevanteAutorizado;
-    private LocalDate fechaNacionalizacion;
+    private BigDecimal sumaFobTotal;
+    private BigDecimal pesoTotalKg;
 
-    // --- Logística ---
-    private String paisOrigen;
-    private String puertoEmbarque;
-    private String puertoLlegada;
-    private Incoterm incoterm;
-    private TipoTransporte tipoTransporte;
-    private String navieraAerolinea;
-    private String numeroViaje;
-    private String numeroContenedor;
+    private List<CompraResumenDTO> facturasComerciales;
 
-    // --- Penalidades ---
-    private Integer diasLibres;
-    private LocalDate fechaLimiteDevolucion;
-
-    // --- Costos ---
-    private BigDecimal costoFlete;
-    private BigDecimal costoSeguro;
-    private BigDecimal impuestosAduanas;
-    private BigDecimal gastosOperativos;
-    private BigDecimal costoTransporteLocal;
-
-    private LocalDateTime fechaCreacion;
+    @Data
+    public static class CompraResumenDTO {
+        private Integer id; // ✅ CORREGIDO: Integer
+        private String serie;
+        private String numero;
+        private String nombreProveedor;
+        private BigDecimal total;
+        private String moneda;
+        private BigDecimal pesoNetoKg;
+    }
 }

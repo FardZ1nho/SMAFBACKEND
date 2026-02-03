@@ -8,18 +8,15 @@ import java.util.List;
 
 @Data
 public class CompraResponseDTO {
+    // CAMBIO: Long -> Integer
     private Integer id;
-
     private String tipoCompra;
     private String tipoComprobante;
-    private String tipoPago; // CONTADO / CREDITO
+    private String tipoPago;
     private String estado;
 
     private String serie;
     private String numero;
-
-    // ✅ NUEVO: ID DE IMPORTACIÓN (Para mostrarlo en el detalle o lista)
-    private String codImportacion;
 
     private LocalDate fechaEmision;
     private LocalDate fechaVencimiento;
@@ -31,36 +28,30 @@ public class CompraResponseDTO {
     private String moneda;
     private BigDecimal tipoCambio;
 
-    // Totales
     private BigDecimal subTotal;
     private BigDecimal igv;
     private BigDecimal total;
 
-    // ✅ SALDOS
-    private BigDecimal montoPagadoInicial;
     private BigDecimal saldoPendiente;
+    private BigDecimal montoPagado;
 
-    // Impuestos
     private BigDecimal percepcion;
     private BigDecimal detraccionPorcentaje;
     private BigDecimal detraccionMonto;
     private BigDecimal retencion;
 
-    private String observaciones;
+    // Importación
+    private String codImportacion;
+    private BigDecimal pesoNetoKg;
+    private Integer bultos;
+    // CAMBIO: Long -> Integer
+    private Integer importacionId;
+
+    private BigDecimal costoTotalImportacion;
+    private BigDecimal prorrateoFlete;
+    private BigDecimal prorrateoSeguro;
+    private BigDecimal prorrateoGastosAduanas;
 
     private List<CompraDetalleResponseDTO> detalles;
-
-    // ✅ LISTA DE PAGOS REALIZADOS
     private List<PagoCompraResponseDTO> pagos;
-
-    @Data
-    public static class PagoCompraResponseDTO {
-        private Integer id;
-        private BigDecimal monto;
-        private String moneda;
-        private String metodoPago;
-        private String fechaPago;
-        private String referencia;
-        private String nombreCuentaOrigen;
-    }
 }

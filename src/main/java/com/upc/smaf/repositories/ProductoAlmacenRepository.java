@@ -37,7 +37,9 @@ public interface ProductoAlmacenRepository extends JpaRepository<ProductoAlmacen
     @Query("SELECT COALESCE(SUM(pa.stock), 0) FROM ProductoAlmacen pa " +
             "WHERE pa.producto.id = :productoId AND pa.activo = true")
     Integer calcularStockTotalProducto(@Param("productoId") Integer productoId);
-
+    // ✅ ESTE ES EL MÉTODO QUE TE FALTABA:
+    // Devuelve todas las filas de ese producto en todos los almacenes para poder sumar el stock
+    List<ProductoAlmacen> findByProducto(Producto producto);
     // Productos con stock bajo en un almacén específico
     @Query("SELECT pa FROM ProductoAlmacen pa " +
             "WHERE pa.almacen.id = :almacenId AND pa.activo = true " +

@@ -11,7 +11,7 @@ public class ProductoResponseDTO {
     private String nombre;
     private String codigo;
     private String descripcion;
-
+    private String codigoInternacional;
     private Integer idCategoria;
     private String nombreCategoria;
 

@@ -21,9 +21,8 @@ public interface CompraDetalleRepository extends JpaRepository<CompraDetalle, In
     // En lugar de navegar "d.compra.importacion" (que no existe),
     // hacemos un cruce explícito entre Importacion (i) y CompraDetalle (d)
     // donde coincidan en la misma Compra.
-    @Query("SELECT SUM(d.cantidad) FROM Importacion i, CompraDetalle d " +
-            "WHERE i.compra.id = d.compra.id " +  // Aquí hacemos la unión manual
-            "AND d.producto.id = :productoId " +
-            "AND i.estado IN ('ORDENADO', 'EN_TRANSITO', 'EN_ADUANAS', 'NACIONALIZADO')")
+    @Query("SELECT SUM(d.cantidad) FROM CompraDetalle d " +
+            "WHERE d.producto.id = :productoId " +
+            "AND d.compra.importacion.estado IN ('ORDENADO', 'EN_TRANSITO', 'EN_ADUANAS')") // Quitamos NACIONALIZADO si ya entra al stock físico
     Integer obtenerStockPorLlegar(@Param("productoId") Integer productoId);
 }
