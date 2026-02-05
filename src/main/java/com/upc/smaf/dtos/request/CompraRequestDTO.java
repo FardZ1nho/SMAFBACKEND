@@ -15,13 +15,13 @@ import java.util.List;
 public class CompraRequestDTO {
 
     @NotNull(message = "El tipo de compra es obligatorio")
-    private String tipoCompra; // BIEN o SERVICIO
+    private String tipoCompra;
 
     @NotNull(message = "El tipo de comprobante es obligatorio")
     private String tipoComprobante;
 
     @NotNull(message = "El tipo de pago es obligatorio")
-    private TipoPago tipoPago; // CONTADO o CREDITO
+    private TipoPago tipoPago;
 
     private String serie;
     private String numero;
@@ -37,30 +37,27 @@ public class CompraRequestDTO {
     private BigDecimal tipoCambio;
     private String observaciones;
 
-    // Totales
+    // --- TOTALES ---
     private BigDecimal subTotal;
+    private BigDecimal fob; // ✅ FOB Adicional
     private BigDecimal igv;
     private BigDecimal total;
 
-    // Impuestos Específicos
+    // Impuestos Específicos (Locales)
     private BigDecimal percepcion;
     private BigDecimal detraccionPorcentaje;
     private BigDecimal detraccionMonto;
     private BigDecimal retencion;
 
     // =================================================================
-    // ✅ CAMPOS CLAVE PARA IMPORTACIÓN
+    // CAMPOS IMPORTACIÓN
     // =================================================================
-
-    // Si el usuario pone "2026-01", el backend busca esa Importación y la vincula.
     private String codImportacion;
 
-    // Vital para prorratear el flete por peso
     private BigDecimal pesoNetoKg;
 
-    private Integer bultos;
-
-    // =================================================================
+    // ✅ CAMBIO: De 'bultos' (Integer) a 'cbm' (BigDecimal)
+    private BigDecimal cbm;
 
     @Valid
     private List<PagoCompraRequestDTO> pagos;

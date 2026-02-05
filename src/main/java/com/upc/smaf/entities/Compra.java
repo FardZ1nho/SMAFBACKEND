@@ -57,15 +57,67 @@ public class Compra {
     @Column(name = "tipo_cambio", precision = 10, scale = 4)
     private BigDecimal tipoCambio;
 
-    // --- TOTALES ---
+    // ==========================================
+    // 💰 DATOS DE LA FACTURA (FOB)
+    // ==========================================
+
     @Column(name = "sub_total", precision = 12, scale = 2)
     private BigDecimal subTotal = BigDecimal.ZERO;
 
-    @Column(precision = 12, scale = 2)
-    private BigDecimal igv = BigDecimal.ZERO;
+    // FOB: Valor de la mercancía (Base para prorrateo por Valor)
+    @Column(name = "fob", precision = 12, scale = 2)
+    private BigDecimal fob = BigDecimal.ZERO;
 
     @Column(precision = 12, scale = 2)
-    private BigDecimal total = BigDecimal.ZERO;
+    private BigDecimal igv = BigDecimal.ZERO; // Se mantiene en 0 por defecto
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal total = BigDecimal.ZERO; // Total = SubTotal + FOB
+
+    // =================================================================
+    // 📦 DATOS LOGÍSTICOS (BASES PARA PRORRATEO)
+    // =================================================================
+
+    @Column(name = "peso_neto_kg", precision = 12, scale = 2)
+    private BigDecimal pesoNetoKg = BigDecimal.ZERO; // Base para prorrateo por Peso
+
+    // ✅ REEMPLAZO DE BULTOS: Ahora es CBM (Volumen)
+    @Column(name = "cbm", precision = 12, scale = 2)
+    private BigDecimal cbm = BigDecimal.ZERO; // Base para prorrateo por Volumen
+
+    // =================================================================
+    // 🧮 RESULTADOS DEL PRORRATEO (Cuánto paga ESTA factura)
+    // =================================================================
+
+    // Resultados Grupo Volumen (CBM)
+    @Column(precision = 12, scale = 2) private BigDecimal proFlete = BigDecimal.ZERO;
+    @Column(precision = 12, scale = 2) private BigDecimal proAlmacenaje = BigDecimal.ZERO;
+    @Column(precision = 12, scale = 2) private BigDecimal proTransporte = BigDecimal.ZERO;
+    @Column(precision = 12, scale = 2) private BigDecimal proCargaDescarga = BigDecimal.ZERO; // Personal + Montacarga
+
+    // Resultados Grupo Peso (KG)
+    @Column(precision = 12, scale = 2) private BigDecimal proDesconsolidacion = BigDecimal.ZERO;
+
+    // Resultados Grupo Valor (FOB)
+    @Column(precision = 12, scale = 2) private BigDecimal proGastosAduaneros = BigDecimal.ZERO; // Vistos, Transmision, Vobo, Comision
+    @Column(precision = 12, scale = 2) private BigDecimal proSeguroResguardo = BigDecimal.ZERO; // Resguardo
+    @Column(precision = 12, scale = 2) private BigDecimal proImpuestos = BigDecimal.ZERO; // IGV + IPM + Percep
+    @Column(precision = 12, scale = 2) private BigDecimal proOtrosGastos = BigDecimal.ZERO; // Otros 1-4 + ADV
+
+    // ✅ COSTO FINAL (Landed Cost)
+    @Column(name = "costo_total_importacion", precision = 12, scale = 2)
+    private BigDecimal costoTotalImportacion = BigDecimal.ZERO;
+
+    // =================================================================
+
+    // Relación con Importación
+    @Column(name = "cod_importacion", length = 50)
+    private String codImportacion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "importacion_id")
+    @JsonIgnore
+    private Importacion importacion;
 
     // --- SALDOS Y DEUDA ---
     @Column(name = "monto_pagado_inicial", precision = 12, scale = 2)
@@ -74,18 +126,11 @@ public class Compra {
     @Column(name = "saldo_pendiente", precision = 12, scale = 2)
     private BigDecimal saldoPendiente = BigDecimal.ZERO;
 
-    // --- IMPUESTOS ESPECÍFICOS ---
-    @Column(precision = 12, scale = 2)
-    private BigDecimal percepcion = BigDecimal.ZERO;
-
-    @Column(name = "detraccion_porcentaje", precision = 5, scale = 2)
-    private BigDecimal detraccionPorcentaje = BigDecimal.ZERO;
-
-    @Column(name = "detraccion_monto", precision = 12, scale = 2)
-    private BigDecimal detraccionMonto = BigDecimal.ZERO;
-
-    @Column(precision = 12, scale = 2)
-    private BigDecimal retencion = BigDecimal.ZERO;
+    // --- IMPUESTOS LOCALES (Si aplica) ---
+    @Column(precision = 12, scale = 2) private BigDecimal percepcion = BigDecimal.ZERO;
+    @Column(name = "detraccion_porcentaje", precision = 5, scale = 2) private BigDecimal detraccionPorcentaje = BigDecimal.ZERO;
+    @Column(name = "detraccion_monto", precision = 12, scale = 2) private BigDecimal detraccionMonto = BigDecimal.ZERO;
+    @Column(precision = 12, scale = 2) private BigDecimal retencion = BigDecimal.ZERO;
 
     @Column(length = 500)
     private String observaciones;
@@ -93,43 +138,6 @@ public class Compra {
     @Enumerated(EnumType.STRING)
     private EstadoCompra estado = EstadoCompra.REGISTRADA;
 
-    // =================================================================
-    // ✅ NUEVOS CAMPOS PARA EL MÓDULO DE IMPORTACIONES
-    // =================================================================
-
-    // 1. El texto que escribe el usuario (Ej: "2026-01") - Sirve para buscar
-    @Column(name = "cod_importacion", length = 50)
-    private String codImportacion;
-
-    // 2. La relación real con la carpeta padre (Foreign Key)
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "importacion_id")
-    @JsonIgnore // Para evitar traer toda la importación al listar compras simples
-    private Importacion importacion;
-
-    // 3. Datos necesarios para el cálculo (Prorrateo)
-    @Column(name = "peso_neto_kg", precision = 12, scale = 2)
-    private BigDecimal pesoNetoKg = BigDecimal.ZERO; // Necesario para distribuir flete
-
-    @Column(name = "bultos")
-    private Integer bultos = 0;
-
-    // 4. Resultados del Costeo (Aquí se guardará cuánto le tocó pagar a esta factura)
-    @Column(name = "prorrateo_flete", precision = 12, scale = 2)
-    private BigDecimal prorrateoFlete = BigDecimal.ZERO;
-
-    @Column(name = "prorrateo_seguro", precision = 12, scale = 2)
-    private BigDecimal prorrateoSeguro = BigDecimal.ZERO;
-
-    @Column(name = "prorrateo_gastos_aduanas", precision = 12, scale = 2)
-    private BigDecimal prorrateoGastosAduanas = BigDecimal.ZERO; // Agente, Almacén, etc.
-
-    @Column(name = "costo_total_importacion", precision = 12, scale = 2)
-    private BigDecimal costoTotalImportacion = BigDecimal.ZERO; // Total Factura + Gastos Prorrateados
-
-    // =================================================================
-
-    // --- RELACIONES ---
     @OneToMany(mappedBy = "compra", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CompraDetalle> detalles = new ArrayList<>();
 
@@ -146,13 +154,23 @@ public class Compra {
     void prePersist() {
         this.fechaRegistro = LocalDateTime.now();
         if (this.subTotal == null) this.subTotal = BigDecimal.ZERO;
+        if (this.fob == null) this.fob = BigDecimal.ZERO;
         if (this.igv == null) this.igv = BigDecimal.ZERO;
         if (this.total == null) this.total = BigDecimal.ZERO;
         if (this.saldoPendiente == null) this.saldoPendiente = BigDecimal.ZERO;
+
+        // Inicializar bases
+        if (this.cbm == null) this.cbm = BigDecimal.ZERO;
+        if (this.pesoNetoKg == null) this.pesoNetoKg = BigDecimal.ZERO;
     }
 
     public void agregarPago(PagoCompra pago) {
         pagos.add(pago);
         pago.setCompra(this);
+    }
+
+    public void agregarDetalle(CompraDetalle detalle) {
+        detalles.add(detalle);
+        detalle.setCompra(this);
     }
 }

@@ -3,55 +3,46 @@ package com.upc.smaf.dtos.response;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 public class CompraResponseDTO {
-    // CAMBIO: Long -> Integer
     private Integer id;
-    private String tipoCompra;
-    private String tipoComprobante;
-    private String tipoPago;
-    private String estado;
-
     private String serie;
     private String numero;
-
+    private String tipoCompra; // BIEN o SERVICIO
+    private String tipoPago;   // CONTADO o CREDITO
     private LocalDate fechaEmision;
-    private LocalDate fechaVencimiento;
-    private LocalDateTime fechaRegistro;
 
+    // Proveedor
     private String nombreProveedor;
     private String rucProveedor;
 
+    // Totales
     private String moneda;
     private BigDecimal tipoCambio;
-
     private BigDecimal subTotal;
+    private BigDecimal fob; // Adicional
     private BigDecimal igv;
     private BigDecimal total;
+    private BigDecimal saldoPendiente; // Calculado
 
-    private BigDecimal saldoPendiente;
-    private BigDecimal montoPagado;
+    private String estado; // PENDIENTE, COMPLETADA, ANULADA
 
-    private BigDecimal percepcion;
-    private BigDecimal detraccionPorcentaje;
-    private BigDecimal detraccionMonto;
-    private BigDecimal retencion;
-
-    // Importación
+    // ✅ CAMPOS DE IMPORTACIÓN QUE FALTABAN
     private String codImportacion;
     private BigDecimal pesoNetoKg;
-    private Integer bultos;
-    // CAMBIO: Long -> Integer
-    private Integer importacionId;
+    private BigDecimal cbm;
+
+    // ✅ RESULTADOS PRORRATEO (Para ver detalle en la compra)
+    private BigDecimal proFlete;
+    private BigDecimal proAlmacenaje;
+    private BigDecimal proTransporte;
+    private BigDecimal proCargaDescarga;
+    private BigDecimal proDesconsolidacion;
+    private BigDecimal proGastosAduaneros;
+    private BigDecimal proSeguroResguardo;
+    private BigDecimal proImpuestos;
+    private BigDecimal proOtrosGastos;
 
     private BigDecimal costoTotalImportacion;
-    private BigDecimal prorrateoFlete;
-    private BigDecimal prorrateoSeguro;
-    private BigDecimal prorrateoGastosAduanas;
-
-    private List<CompraDetalleResponseDTO> detalles;
-    private List<PagoCompraResponseDTO> pagos;
 }
