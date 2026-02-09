@@ -35,4 +35,6 @@ public interface ProductoService {
 
     // 👇👇👇 3. AGREGA ESTA LÍNEA AL FINAL (Esto solucionará el error rojo) 👇👇👇
     ProductoAlmacen agregarStock(ProductoAlmacenRequestDTO request);
+
+    void reducirStock(Integer idProducto, int cantidadVenta);
 }

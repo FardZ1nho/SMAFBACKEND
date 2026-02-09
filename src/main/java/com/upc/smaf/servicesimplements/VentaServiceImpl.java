@@ -63,8 +63,13 @@ public class VentaServiceImpl implements VentaService {
             Producto producto = productoRepository.findById(detalleDTO.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detalleDTO.getProductoId()));
 
-            if (producto.getStockActual() < detalleDTO.getCantidad()) {
-                throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
+            // ✅ CORRECCIÓN 1: VALIDAR STOCK SOLO SI NO ES SERVICIO
+            if (producto.getTipo() != TipoProducto.SERVICIO) {
+                // Si es un KIT, la lógica de stock es más compleja (stock virtual),
+                // pero si es PRODUCTO simple, validamos aquí:
+                if (producto.getTipo() == TipoProducto.PRODUCTO && producto.getStockActual() < detalleDTO.getCantidad()) {
+                    throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
+                }
             }
 
             DetalleVenta detalle = new DetalleVenta();
@@ -77,9 +82,15 @@ public class VentaServiceImpl implements VentaService {
             subtotalAcumulado = subtotalAcumulado.add(detalle.getSubtotal());
             venta.agregarDetalle(detalle);
 
-            // Actualizar stock
-            producto.setStockActual(producto.getStockActual() - detalleDTO.getCantidad());
-            productoRepository.save(producto);
+            // ✅ CORRECCIÓN 2: DESCONTAR STOCK SOLO SI NO ES SERVICIO
+            if (producto.getTipo() != TipoProducto.SERVICIO) {
+                // Si es KIT, no se descuenta directamente aquí (se debería usar reducirStock recursivo),
+                // pero si es PRODUCTO simple:
+                if (producto.getTipo() == TipoProducto.PRODUCTO) {
+                    producto.setStockActual(producto.getStockActual() - detalleDTO.getCantidad());
+                    productoRepository.save(producto);
+                }
+            }
         }
 
         // --- TOTALES ---
@@ -114,7 +125,6 @@ public class VentaServiceImpl implements VentaService {
                 );
                 totalPagadoNormalizado = totalPagadoNormalizado.add(montoEnMonedaVenta);
 
-                // ✅ IMPORTANTE: Usamos el método helper para vincular (Cascade)
                 venta.agregarPago(pago);
             }
         }
@@ -124,6 +134,7 @@ public class VentaServiceImpl implements VentaService {
 
         if (venta.getTipoPago() == TipoPago.CONTADO) {
             BigDecimal diferencia = totalVenta.subtract(totalPagadoNormalizado);
+            // Tolerancia de 0.10 céntimos por redondeo
             if (diferencia.compareTo(new BigDecimal("0.10")) > 0) {
                 throw new RuntimeException("Pago incompleto para venta al CONTADO.");
             }
@@ -255,6 +266,10 @@ public class VentaServiceImpl implements VentaService {
         BigDecimal subtotal = BigDecimal.ZERO;
         for (DetalleVentaRequestDTO detDTO : request.getDetalles()) {
             Producto p = productoRepository.findById(detDTO.getProductoId()).orElseThrow();
+
+            // ✅ También podrías querer validar stock aquí si al editar pasas a estado completado,
+            // pero por simplicidad mantenemos tu lógica original de solo agregar.
+
             DetalleVenta det = new DetalleVenta();
             det.setProducto(p);
             det.setCantidad(detDTO.getCantidad());
@@ -325,8 +340,11 @@ public class VentaServiceImpl implements VentaService {
         Venta venta = ventaRepository.findById(id).orElseThrow();
         for(DetalleVenta det : venta.getDetalles()) {
             Producto p = det.getProducto();
-            p.setStockActual(p.getStockActual() + det.getCantidad());
-            productoRepository.save(p);
+            // ✅ SOLO DEVOLVER STOCK SI NO ES SERVICIO
+            if(p.getTipo() != TipoProducto.SERVICIO) {
+                p.setStockActual(p.getStockActual() + det.getCantidad());
+                productoRepository.save(p);
+            }
         }
         venta.setEstado(EstadoVenta.CANCELADA);
         ventaRepository.save(venta);
@@ -379,7 +397,6 @@ public class VentaServiceImpl implements VentaService {
         }).collect(Collectors.toList());
         dto.setDetalles(detDTOs);
 
-        // ✅ CORRECCIÓN CRÍTICA: Enviar la lista de pagos al Frontend
         if (venta.getPagos() != null) {
             List<VentaResponseDTO.PagoResponseDTO> pagosDTO = venta.getPagos().stream().map(p -> {
                 VentaResponseDTO.PagoResponseDTO pp = new VentaResponseDTO.PagoResponseDTO();

@@ -26,12 +26,11 @@ public class ProductoServiceImpl implements ProductoService {
     private final CompraDetalleRepository compraDetalleRepository;
 
     // ==========================================
-    // 1. CREAR PRODUCTO (Soporta Kits)
+    // 1. CREAR PRODUCTO
     // ==========================================
     @Override
     @Transactional
     public ProductoResponseDTO crearProducto(ProductoRequestDTO request) {
-        // Validar SKU único
         if (request.getCodigo() != null && !request.getCodigo().isEmpty()) {
             if (productoRepository.existsByCodigo(request.getCodigo())) {
                 throw new RuntimeException("El código SKU ya existe");
@@ -44,7 +43,6 @@ public class ProductoServiceImpl implements ProductoService {
         producto.setCodigoInternacional(request.getCodigoInternacional());
         producto.setDescripcion(request.getDescripcion());
 
-        // Asignar Tipo
         if (request.getTipo() != null) {
             try {
                 producto.setTipo(TipoProducto.valueOf(request.getTipo()));
@@ -70,13 +68,11 @@ public class ProductoServiceImpl implements ProductoService {
             producto.setStockActual(0);
         }
 
-        // ✅ LÓGICA KIT: Guardar componentes
         if (producto.getTipo() == TipoProducto.KIT && request.getComponentes() != null) {
             for (ProductoRequestDTO.ComponenteDTO compDto : request.getComponentes()) {
                 Producto hijo = productoRepository.findById(compDto.getIdProducto())
                         .orElseThrow(() -> new RuntimeException("Componente no encontrado ID: " + compDto.getIdProducto()));
 
-                // Creamos la relación manualmente o usando el helper
                 ProductoKit pk = new ProductoKit();
                 pk.setKit(producto);
                 pk.setComponente(hijo);
@@ -91,7 +87,7 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 2. AGREGAR STOCK (Solo para Productos Simples)
+    // 2. AGREGAR STOCK (Solo Productos Físicos)
     // ==========================================
     @Override
     @Transactional
@@ -99,10 +95,12 @@ public class ProductoServiceImpl implements ProductoService {
         Producto producto = productoRepository.findById(dto.getProductoId())
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
-        // ⛔ BLOQUEO: No se puede sumar stock físico a un KIT
         if (producto.getTipo() == TipoProducto.KIT) {
             throw new RuntimeException("No se puede agregar stock físico a un KIT. Agregue stock a sus componentes individuales.");
         }
+
+        // Opcional: Bloquear agregar stock a servicios si quieres ser estricto
+        // if (producto.getTipo() == TipoProducto.SERVICIO) return null;
 
         Almacen almacen = almacenRepository.findById(dto.getAlmacenId())
                 .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
@@ -128,7 +126,6 @@ public class ProductoServiceImpl implements ProductoService {
 
         productoAlmacenRepository.save(pa);
 
-        // Actualizamos el stock total físico del padre
         producto.calcularStockTotal();
         productoRepository.save(producto);
 
@@ -167,9 +164,8 @@ public class ProductoServiceImpl implements ProductoService {
         if (request.getMoneda() != null) producto.setMoneda(request.getMoneda());
         if (request.getUnidadMedida() != null) producto.setUnidadMedida(request.getUnidadMedida());
 
-        // ✅ ACTUALIZAR RECETA DEL KIT
         if (producto.getTipo() == TipoProducto.KIT) {
-            producto.getComponentes().clear(); // Borramos anteriores
+            producto.getComponentes().clear();
 
             if (request.getComponentes() != null) {
                 for (ProductoRequestDTO.ComponenteDTO compDto : request.getComponentes()) {
@@ -190,7 +186,61 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 4. MÉTODOS DE LECTURA Y UTILITARIOS
+    // 4. REDUCIR STOCK (Ventas) - ✅ AQUÍ ESTÁ EL CAMBIO IMPORTANTE
+    // ==========================================
+    @Override
+    @Transactional
+    public void reducirStock(Integer idProducto, int cantidadVenta) {
+        Producto producto = productoRepository.findById(idProducto)
+                .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
+
+        // ✅ CORRECCIÓN CLAVE: Si es SERVICIO, ignoramos el stock y salimos
+        if (producto.getTipo() == TipoProducto.SERVICIO) {
+            return;
+        }
+
+        // CASO A: ES UN KIT (Virtual)
+        if (producto.getTipo() == TipoProducto.KIT) {
+            // Recorremos su receta y descontamos a cada hijo
+            for (ProductoKit componenteKit : producto.getComponentes()) {
+                Producto hijo = componenteKit.getComponente();
+                int cantidadNecesaria = componenteKit.getCantidad() * cantidadVenta;
+
+                // Recursividad: Descontamos a los hijos
+                reducirStock(hijo.getId(), cantidadNecesaria);
+            }
+            return;
+        }
+
+        // CASO B: ES UN PRODUCTO FÍSICO (Stock real)
+        if (producto.getStockActual() < cantidadVenta) {
+            throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
+        }
+
+        // Descontar de almacenes específicos si existen
+        if (!producto.getProductosAlmacen().isEmpty()) {
+            int cantidadRestante = cantidadVenta;
+
+            for (ProductoAlmacen pa : producto.getProductosAlmacen()) {
+                if (cantidadRestante <= 0) break;
+                if (!pa.getActivo() || pa.getStock() <= 0) continue;
+
+                int aDescontar = Math.min(pa.getStock(), cantidadRestante);
+                pa.setStock(pa.getStock() - aDescontar);
+                cantidadRestante -= aDescontar;
+            }
+
+            producto.calcularStockTotal(); // Recalcular total
+            productoRepository.save(producto);
+        } else {
+            // Fallback simple si no usa almacenes
+            producto.setStockActual(producto.getStockActual() - cantidadVenta);
+            productoRepository.save(producto);
+        }
+    }
+
+    // ==========================================
+    // 5. MÉTODOS DE LECTURA Y UTILITARIOS
     // ==========================================
 
     @Override
@@ -225,8 +275,6 @@ public class ProductoServiceImpl implements ProductoService {
 
     @Override
     public List<ProductoResponseDTO> obtenerProductosConStockBajo() {
-        // Obtenemos todos los activos y filtramos en memoria usando el cálculo real
-        // Esto es necesario porque para los KITS el stock en BD puede ser engañoso
         return productoRepository.findByActivoTrue().stream()
                 .map(this::convertirAResponseDTO)
                 .filter(dto -> dto.getStockActual() < dto.getStockMinimo())
@@ -248,17 +296,14 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 5. IMPLEMENTACIÓN REAL DE ESTADOS (USANDO STOCK VIRTUAL)
+    // 6. ESTADOS Y STOCK VIRTUAL
     // ==========================================
 
     @Override
     public Boolean necesitaReorden(Integer idProducto) {
         Producto producto = productoRepository.findById(idProducto)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
-
-        // Usamos el cálculo real (Virtual si es Kit, Físico si es Producto)
         int stockReal = calcularStockVirtual(producto);
-
         return stockReal < producto.getStockMinimo();
     }
 
@@ -276,38 +321,31 @@ public class ProductoServiceImpl implements ProductoService {
         else return "ALTO";
     }
 
-    // ==========================================
-    // 6. CÁLCULO DE STOCK VIRTUAL (EL CEREBRO DEL SISTEMA)
-    // ==========================================
-    /**
-     * Calcula dinámicamente el stock.
-     * - Si es SIMPLE: Retorna su stock físico.
-     * - Si es KIT: Calcula el "cuello de botella" basado en sus componentes.
-     */
     private int calcularStockVirtual(Producto producto) {
-        // Caso Base: Producto Simple
+        // Si es SERVICIO, retornamos un número alto para que parezca siempre disponible
+        if (producto.getTipo() == TipoProducto.SERVICIO) {
+            return 9999;
+        }
+
         if (producto.getTipo() != TipoProducto.KIT) {
             return producto.getStockActual() != null ? producto.getStockActual() : 0;
         }
 
-        // Caso Kit sin componentes
         if (producto.getComponentes() == null || producto.getComponentes().isEmpty()) {
             return 0;
         }
 
         int stockPosible = Integer.MAX_VALUE;
 
-        // Iteramos los componentes para encontrar el limitante
         for (ProductoKit pk : producto.getComponentes()) {
             Producto hijo = pk.getComponente();
             Integer cantidadRequerida = pk.getCantidad();
 
             if (cantidadRequerida <= 0) continue;
 
-            // Recursividad: El hijo podría ser otro kit o un producto simple
             int stockHijo = calcularStockVirtual(hijo);
 
-            if (stockHijo == 0) return 0; // Si falta un componente, no se puede armar nada
+            if (stockHijo == 0) return 0;
 
             int kitsPorComponente = stockHijo / cantidadRequerida;
 
@@ -338,13 +376,18 @@ public class ProductoServiceImpl implements ProductoService {
             response.setNombreCategoria(producto.getCategoria().getNombre());
         }
 
-        // ✅ STOCK DINÁMICO: Siempre calculamos al momento de leer
         int stockReal = calcularStockVirtual(producto);
-        response.setStockActual(stockReal);
+
+        // Visualmente para servicios mostramos 0 o infinito, depende tu gusto.
+        // Aquí dejo 9999 si es servicio para que no salga "Agotado" en frontend
+        if(producto.getTipo() == TipoProducto.SERVICIO) {
+            response.setStockActual(9999);
+        } else {
+            response.setStockActual(stockReal);
+        }
 
         response.setStockMinimo(producto.getStockMinimo());
 
-        // Stock por llegar
         if (producto.getTipo() == TipoProducto.PRODUCTO) {
             Integer porLlegar = compraDetalleRepository.obtenerStockPorLlegar(producto.getId());
             response.setStockPorLlegar(porLlegar != null ? porLlegar : 0);
@@ -360,7 +403,6 @@ public class ProductoServiceImpl implements ProductoService {
         response.setActivo(producto.getActivo());
         response.setFechaCreacion(producto.getFechaCreacion());
 
-        // Mapear componentes si es Kit
         if (producto.getTipo() == TipoProducto.KIT && producto.getComponentes() != null) {
             List<ProductoResponseDTO.ComponenteResponseDTO> comps = producto.getComponentes().stream().map(pk -> {
                 ProductoResponseDTO.ComponenteResponseDTO dto = new ProductoResponseDTO.ComponenteResponseDTO();
@@ -373,8 +415,6 @@ public class ProductoServiceImpl implements ProductoService {
         }
 
         calcularMargenGanancia(response);
-
-        // Calcular estado visual para el Frontend
         calcularEstadoStockVisual(response, stockReal);
 
         return response;
@@ -395,6 +435,13 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private void calcularEstadoStockVisual(ProductoResponseDTO response, int stockReal) {
+        // Si es servicio, siempre es ALTO/DISPONIBLE
+        if ("SERVICIO".equals(response.getTipo())) {
+            response.setEstadoStock("ALTO");
+            response.setNecesitaReorden(false);
+            return;
+        }
+
         int minimo = response.getStockMinimo() != null ? response.getStockMinimo() : 0;
 
         if (stockReal <= 0) {
