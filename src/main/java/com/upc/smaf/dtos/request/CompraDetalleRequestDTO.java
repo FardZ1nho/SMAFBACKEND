@@ -1,11 +1,14 @@
 package com.upc.smaf.dtos.request;
 
 import lombok.Data;
+import java.math.BigDecimal;
 
 @Data
 public class CompraDetalleRequestDTO {
     private Integer productoId;
     private Integer almacenId; // Donde ingresará físicamente la mercadería
     private Integer cantidad;
-    private Double precioUnitario; // Costo de compra
+
+    // ✅ Se recomienda usar BigDecimal siempre para dinero
+    private BigDecimal precioUnitario;
 }

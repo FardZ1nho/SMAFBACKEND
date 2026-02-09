@@ -25,8 +25,7 @@ public class CompraDetalle {
     @JoinColumn(name = "producto_id", nullable = false)
     private Producto producto;
 
-    // ✅ CAMBIO 1: El almacén es opcional (nullable = true por defecto)
-    // Si es BIEN -> Se llena. Si es SERVICIO -> Se deja en null.
+    // El almacén es opcional (nullable = true). Si es servicio, va null.
     @ManyToOne
     @JoinColumn(name = "almacen_id")
     private Almacen almacen;
@@ -34,15 +33,28 @@ public class CompraDetalle {
     @Column(nullable = false)
     private Integer cantidad;
 
-    // ✅ CAMBIO 2: Usar BigDecimal para no perder centavos
+    // Precio FOB Unitario (Costo de compra original en la factura)
     @Column(name = "precio_unitario", precision = 12, scale = 2)
     private BigDecimal precioUnitario;
 
-    // ✅ CAMBIO 3: Campo calculado útil (Cantidad * Precio)
+    // Importe FOB Total (Cantidad * Precio Unitario)
     @Column(name = "importe_total", precision = 12, scale = 2)
     private BigDecimal importeTotal;
 
-    // Método helper para calcular el total de la línea antes de guardar
+    // =================================================================
+    // ✅ NUEVOS CAMPOS PARA EL PRORRATEO (COSTOS REALES)
+    // =================================================================
+
+    // Costo Unitario Final (FOB + Flete + Aduanas + etc. por unidad)
+    // Este es el valor que debería ir al Kardex.
+    @Column(name = "costo_unitario_landed", precision = 12, scale = 4)
+    private BigDecimal costoUnitarioLanded;
+
+    // Costo Total de la línea (Costo Unitario Landed * Cantidad)
+    @Column(name = "costo_total_landed", precision = 12, scale = 2)
+    private BigDecimal costoTotalLanded;
+
+    // Método helper para calcular el total FOB antes de guardar
     public void calcularImporte() {
         if (this.precioUnitario != null && this.cantidad != null) {
             this.importeTotal = this.precioUnitario.multiply(new BigDecimal(this.cantidad));

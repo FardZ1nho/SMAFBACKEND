@@ -296,6 +296,9 @@ public class CompraServiceImpl implements CompraService {
         importacionRepository.save(imp);
     }
 
+// ... imports necesarios ...
+    // import com.upc.smaf.dtos.response.CompraDetalleResponseDTO;
+
     private CompraResponseDTO mapToResponseDTO(Compra c) {
         CompraResponseDTO dto = new CompraResponseDTO();
         dto.setId(c.getId());
@@ -324,7 +327,7 @@ public class CompraServiceImpl implements CompraService {
         dto.setPesoNetoKg(orZero(c.getPesoNetoKg()));
         dto.setCbm(orZero(c.getCbm()));
 
-        // Resultados Prorrateo (Mapeo completo)
+        // Resultados Prorrateo
         dto.setProFlete(orZero(c.getProFlete()));
         dto.setProAlmacenaje(orZero(c.getProAlmacenaje()));
         dto.setProTransporte(orZero(c.getProTransporte()));
@@ -337,8 +340,47 @@ public class CompraServiceImpl implements CompraService {
 
         dto.setCostoTotalImportacion(orZero(c.getCostoTotalImportacion()));
 
-        // Mapeo de detalles y pagos (Simplificado para la lista)
-        // Si necesitas detalles completos en la lista, descomenta o usa otro DTO
+        // ✅ MAPEO USANDO TU DTO EXISTENTE (CompraDetalleResponseDTO)
+        if (c.getDetalles() != null && !c.getDetalles().isEmpty()) {
+            List<CompraDetalleResponseDTO> detallesDto = c.getDetalles().stream().map(d -> {
+                CompraDetalleResponseDTO item = new CompraDetalleResponseDTO();
+
+                item.setId(d.getId()); // ID del detalle
+
+                if (d.getProducto() != null) {
+                    item.setProductoId(d.getProducto().getId());
+                    item.setCodigoProducto(d.getProducto().getCodigo());
+                    item.setNombreProducto(d.getProducto().getNombre());
+                } else {
+                    item.setNombreProducto("Producto Eliminado");
+                }
+
+                item.setCantidad(d.getCantidad());
+                item.setPrecioUnitario(d.getPrecioUnitario());
+
+                // Importe (Total FOB)
+                if (d.getImporteTotal() != null) {
+                    item.setImporte(d.getImporteTotal());
+                } else {
+                    BigDecimal cant = new BigDecimal(d.getCantidad());
+                    item.setImporte(d.getPrecioUnitario().multiply(cant));
+                }
+
+                // Almacén
+                if (d.getAlmacen() != null) {
+                    item.setNombreAlmacen(d.getAlmacen().getNombre());
+                }
+
+                // Costos Landed (Si ya se calcularon)
+                item.setCostoUnitarioLanded(d.getCostoUnitarioLanded());
+                item.setCostoTotalLanded(d.getCostoTotalLanded());
+
+                return item;
+            }).collect(Collectors.toList());
+
+            dto.setDetalles(detallesDto);
+        }
+
         return dto;
     }
 

@@ -3,11 +3,12 @@ package com.upc.smaf.dtos.response;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List; // Importante
 
 @Data
 public class ProductoResponseDTO {
     private Integer id;
-    private String tipo; // "PRODUCTO" or "SERVICIO"
+    private String tipo;
     private String nombre;
     private String codigo;
     private String descripcion;
@@ -15,10 +16,8 @@ public class ProductoResponseDTO {
     private Integer idCategoria;
     private String nombreCategoria;
 
-    private Integer stockActual; // Physical stock in warehouse
+    private Integer stockActual;
     private Integer stockMinimo;
-
-    // ✅ NEW FIELD: Stock in transit (Ordered/In Transit/Customs)
     private Integer stockPorLlegar;
 
     private BigDecimal precioChina;
@@ -31,9 +30,19 @@ public class ProductoResponseDTO {
     private Boolean activo;
     private LocalDateTime fechaCreacion;
 
-    // Calculated fields
     private BigDecimal margenGanancia;
     private Double porcentajeMargen;
     private String estadoStock;
     private Boolean necesitaReorden;
+
+    // ✅ NUEVO: Lista de componentes para mostrar en el detalle
+    private List<ComponenteResponseDTO> componentes;
+
+    // ✅ CLASE INTERNA para la respuesta
+    @Data
+    public static class ComponenteResponseDTO {
+        private Integer idProducto;
+        private String nombre;
+        private Integer cantidad;
+    }
 }
