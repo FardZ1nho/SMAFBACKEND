@@ -30,8 +30,7 @@ public interface MovimientoService {
      * Registrar ajuste de inventario
      */
     Movimiento registrarAjuste(Integer productoId, Long almacenId,
-                               Integer cantidad, String motivo);
-
+                               Integer cantidad, String motivo, String usuarioResponsable);
     /**
      * Listar todos los movimientos
      */

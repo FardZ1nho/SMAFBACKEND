@@ -28,9 +28,11 @@ public class MovimientoResponseDTO {
 
     // Detalles del movimiento
     private TipoMovimiento tipoMovimiento;
-    private String tipoMovimientoLabel; // "Traslado", "Entrada", etc.
+    private String tipoMovimientoLabel;
     private Integer cantidad;
     private String motivo;
+
+    // ✅ NUEVO: Para saber quién hizo el movimiento
     private String usuarioResponsable;
 
     // Fechas

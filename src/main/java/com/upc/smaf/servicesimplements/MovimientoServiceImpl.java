@@ -27,6 +27,9 @@ public class MovimientoServiceImpl implements MovimientoService {
     private final AlmacenRepository almacenRepository;
     private final ProductoAlmacenRepository productoAlmacenRepository;
 
+    // ==========================================
+    // 1. REGISTRAR TRASLADO
+    // ==========================================
     @Override
     @Transactional
     public Movimiento registrarTraslado(Integer productoId, Long almacenOrigenId,
@@ -91,6 +94,9 @@ public class MovimientoServiceImpl implements MovimientoService {
         return movimientoRepository.save(movimiento);
     }
 
+    // ==========================================
+    // 2. REGISTRAR ENTRADA
+    // ==========================================
     @Override
     @Transactional
     public Movimiento registrarEntrada(Integer productoId, Long almacenDestinoId,
@@ -133,6 +139,9 @@ public class MovimientoServiceImpl implements MovimientoService {
         return movimientoRepository.save(movimiento);
     }
 
+    // ==========================================
+    // 3. REGISTRAR SALIDA
+    // ==========================================
     @Override
     @Transactional
     public Movimiento registrarSalida(Integer productoId, Long almacenOrigenId,
@@ -171,33 +180,59 @@ public class MovimientoServiceImpl implements MovimientoService {
         return movimientoRepository.save(movimiento);
     }
 
+    // ==========================================
+    // 4. REGISTRAR AJUSTE (CON AUDITORÍA)
+    // ==========================================
     @Override
     @Transactional
     public Movimiento registrarAjuste(Integer productoId, Long almacenId,
-                                      Integer cantidad, String motivo) {
+                                      Integer cantidad, String motivo, String usuarioResponsable) {
+
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
         Almacen almacen = almacenRepository.findById(almacenId)
                 .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
+        // Buscar la relación Producto-Almacén
         ProductoAlmacen productoAlmacen = productoAlmacenRepository
                 .findByProductoIdAndAlmacenId(productoId, almacenId)
-                .orElseThrow(() -> new RuntimeException("Producto no existe en este almacén"));
+                .orElseGet(() -> {
+                    // Si el ajuste es negativo (salida) y no existe el registro, es un error lógico
+                    if (cantidad < 0) {
+                        throw new RuntimeException("No se puede disminuir stock de un producto que no existe en este almacén.");
+                    }
+                    // Si es positivo, creamos la relación
+                    ProductoAlmacen nuevo = new ProductoAlmacen();
+                    nuevo.setProducto(producto);
+                    nuevo.setAlmacen(almacen);
+                    nuevo.setStock(0);
+                    nuevo.setActivo(true);
+                    return nuevo;
+                });
 
-        int stockAnterior = productoAlmacen.getStock();
-        productoAlmacen.setStock(stockAnterior + cantidad);
+        int stockActual = productoAlmacen.getStock();
+        int nuevoStock = stockActual + cantidad; // cantidad puede ser positiva o negativa
+
+        // Validación de integridad: No permitir stock negativo
+        if (nuevoStock < 0) {
+            throw new RuntimeException("Stock insuficiente para realizar el ajuste. Stock actual: " + stockActual + ", Intento de ajuste: " + cantidad);
+        }
+
+        // Guardar el nuevo stock en el almacén específico
+        productoAlmacen.setStock(nuevoStock);
         productoAlmacenRepository.save(productoAlmacen);
 
-        // Actualizar stock total
+        // Actualizar Stock Global del Producto (Suma de todos los almacenes)
         producto.calcularStockTotal();
         productoRepository.save(producto);
 
-        // Crear movimiento
+        // Crear registro de auditoría (Movimiento)
         Movimiento movimiento = new Movimiento();
         movimiento.setCodigo(generarCodigoMovimiento());
         movimiento.setProducto(producto);
 
+        // Lógica visual: Si entra (+), destino es el almacén. Si sale (-), origen es el almacén.
         if (cantidad > 0) {
             movimiento.setAlmacenDestino(almacen);
         } else {
@@ -205,12 +240,17 @@ public class MovimientoServiceImpl implements MovimientoService {
         }
 
         movimiento.setTipoMovimiento(TipoMovimiento.AJUSTE);
-        movimiento.setCantidad(Math.abs(cantidad));
+        movimiento.setCantidad(Math.abs(cantidad)); // Guardamos siempre positivo en cantidad
         movimiento.setMotivo(motivo);
+        movimiento.setUsuarioResponsable(usuarioResponsable); // ✅ Guardamos quién hizo el ajuste
         movimiento.setFechaMovimiento(LocalDateTime.now());
 
         return movimientoRepository.save(movimiento);
     }
+
+    // ==========================================
+    // MÉTODOS DE LECTURA
+    // ==========================================
 
     @Override
     public List<Movimiento> listarTodos() {
@@ -246,11 +286,16 @@ public class MovimientoServiceImpl implements MovimientoService {
     // Método auxiliar para generar código
     private String generarCodigoMovimiento() {
         String fecha = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        // Buscar el último código del día o iniciar uno nuevo
         String ultimoCodigo = movimientoRepository.findUltimoCodigo().orElse("MOV-" + fecha + "-0000");
 
         String[] partes = ultimoCodigo.split("-");
-        int numero = Integer.parseInt(partes[2]) + 1;
+        // Asegurar que estamos comparando con el mismo día, si no, resetear contador
+        if (!ultimoCodigo.contains(fecha)) {
+            return "MOV-" + fecha + "-0001";
+        }
 
+        int numero = Integer.parseInt(partes[2]) + 1;
         return String.format("MOV-%s-%04d", fecha, numero);
     }
 }
