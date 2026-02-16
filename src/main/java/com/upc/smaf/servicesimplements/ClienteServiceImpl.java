@@ -194,10 +194,10 @@ public class ClienteServiceImpl implements ClienteService {
                 throw new RuntimeException("El RUC debe tener exactamente 11 dígitos");
             }
 
-            // RUC debe empezar con 10 (persona jurídica) o 20 (empresa)
+            // Agregamos 15 y 17 a los permitidos
             String ruc = request.getNumeroDocumento();
-            if (!ruc.startsWith("10") && !ruc.startsWith("20")) {
-                throw new RuntimeException("El RUC debe comenzar con 10 o 20");
+            if (!ruc.startsWith("10") && !ruc.startsWith("15") && !ruc.startsWith("17") && !ruc.startsWith("20")) {
+                throw new RuntimeException("El RUC debe comenzar con 10, 15, 17 o 20");
             }
         } else {
             throw new RuntimeException("Las empresas deben usar RUC como tipo de documento");
@@ -214,14 +214,19 @@ public class ClienteServiceImpl implements ClienteService {
     private void mapearRequestAEntidad(ClienteRequestDTO request, Cliente cliente) {
         cliente.setTipoCliente(request.getTipoCliente().toUpperCase());
 
-        // ⭐⭐⭐ CORRECCIÓN PARA EMPRESAS ⭐⭐⭐
+        // ⭐⭐⭐ CORRECCIÓN PARA EL ERROR "NOT NULL PROPERTY" ⭐⭐⭐
         if ("EMPRESA".equalsIgnoreCase(request.getTipoCliente())) {
-            // Para empresas, usar la razón social como nombre completo
+            // Para empresas, usar la razón social
             cliente.setNombreCompleto(request.getRazonSocial());
+
+            // ✅ IMPORTANTE: Llenamos también el campo 'nombre' para que no sea null
             cliente.setNombre(request.getRazonSocial());
+
         } else {
             // Para personas, usar el nombre completo
             cliente.setNombreCompleto(request.getNombreCompleto());
+
+            // ✅ IMPORTANTE: Aquí también
             cliente.setNombre(request.getNombreCompleto());
         }
 

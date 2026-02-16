@@ -9,7 +9,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/clientes")
@@ -23,13 +25,15 @@ public class ClienteController {
      * POST /clientes
      */
     @PostMapping
-    public ResponseEntity<ClienteResponseDTO> crearCliente(
-            @Valid @RequestBody ClienteRequestDTO request) {
+    public ResponseEntity<?> crearCliente( // 👈 Cambiado a <?> para poder devolver errores
+                                           @Valid @RequestBody ClienteRequestDTO request) {
         try {
             ClienteResponseDTO response = clienteService.crearCliente(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(null);
+            // ✅ ESTO ES LO QUE ARREGLA TU PROBLEMA:
+            // Ahora devolvemos el mensaje del error para que Angular lo pueda mostrar
+            return ResponseEntity.badRequest().body(Collections.singletonMap("mensaje", e.getMessage()));
         }
     }
 
@@ -72,14 +76,15 @@ public class ClienteController {
      * PUT /clientes/{id}
      */
     @PutMapping("/{id}")
-    public ResponseEntity<ClienteResponseDTO> actualizarCliente(
-            @PathVariable Integer id,
-            @Valid @RequestBody ClienteRequestDTO request) {
+    public ResponseEntity<?> actualizarCliente( // 👈 Cambiado a <?> también aquí
+                                                @PathVariable Integer id,
+                                                @Valid @RequestBody ClienteRequestDTO request) {
         try {
             ClienteResponseDTO response = clienteService.actualizarCliente(id, request);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+            // ✅ También mostramos el error al editar
+            return ResponseEntity.badRequest().body(Collections.singletonMap("mensaje", e.getMessage()));
         }
     }
 
