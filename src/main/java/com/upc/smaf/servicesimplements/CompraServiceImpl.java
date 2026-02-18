@@ -271,6 +271,147 @@ public class CompraServiceImpl implements CompraService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    @Transactional
+    public CompraResponseDTO actualizarCompra(Integer id, CompraRequestDTO request) {
+        // 1. Buscar la compra existente
+        Compra compra = compraRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Compra no encontrada ID: " + id));
+
+        // Validar que no esté anulada (opcional)
+        if (compra.getEstado() == EstadoCompra.ANULADA) {
+            throw new RuntimeException("No se puede editar una compra ANULADA");
+        }
+
+        // ====================================================
+        // 🔄 2. REVERTIR STOCK ANTERIOR (IMPORTANTE)
+        // ====================================================
+        // Antes de borrar los detalles viejos, restamos el stock que habíamos sumado
+        if (compra.getTipoCompra() == TipoCompra.BIEN) {
+            for (CompraDetalle detalleViejo : compra.getDetalles()) {
+                Producto p = detalleViejo.getProducto();
+                int stockActual = p.getStockActual() != null ? p.getStockActual() : 0;
+                // Restamos la cantidad vieja
+                p.setStockActual(Math.max(0, stockActual - detalleViejo.getCantidad()));
+                productoRepository.save(p);
+            }
+        }
+
+        // 3. Limpiar detalles anteriores (JPA se encarga de borrarlos si tienes orphanRemoval=true, sino usamos repo)
+        detalleRepository.deleteAll(compra.getDetalles());
+        compra.getDetalles().clear();
+
+        // ====================================================
+        // 4. ACTUALIZAR DATOS DE CABECERA
+        // ====================================================
+        Proveedor proveedor = proveedorRepository.findById(request.getProveedorId())
+                .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
+
+        compra.setProveedor(proveedor);
+        compra.setTipoCompra(TipoCompra.valueOf(request.getTipoCompra()));
+        compra.setTipoComprobante(TipoComprobante.valueOf(request.getTipoComprobante()));
+        compra.setSerie(request.getSerie());
+        compra.setNumero(request.getNumero());
+        compra.setFechaEmision(request.getFechaEmision());
+        compra.setFechaVencimiento(request.getFechaVencimiento());
+        compra.setMoneda(request.getMoneda());
+        compra.setTipoCambio(request.getTipoCambio());
+        compra.setObservaciones(request.getObservaciones());
+
+        // Actualizar Totales
+        compra.setSubTotal(request.getSubTotal());
+        compra.setFob(request.getFob() != null ? request.getFob() : BigDecimal.ZERO);
+        compra.setIgv(request.getIgv());
+        compra.setTotal(request.getTotal());
+
+        // Actualizar Impuestos
+        compra.setPercepcion(request.getPercepcion() != null ? request.getPercepcion() : BigDecimal.ZERO);
+        compra.setRetencion(request.getRetencion());
+
+        // Actualizar Datos Logísticos
+        String codImportacionAnterior = compra.getCodImportacion(); // Guardamos referencia por si cambió
+        compra.setCodImportacion(request.getCodImportacion());
+        compra.setPesoNetoKg(request.getPesoNetoKg());
+        compra.setCbm(request.getCbm());
+
+        // Manejo de Carpeta de Importación (Si cambió el código)
+        if (request.getCodImportacion() != null && !request.getCodImportacion().equals(codImportacionAnterior)) {
+            Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(request.getCodImportacion());
+            if (importacionOpt.isPresent()) {
+                compra.setImportacion(importacionOpt.get());
+            } else {
+                // Crear nueva carpeta si no existe (lógica resumida igual que en crear)
+                Importacion nuevaImp = new Importacion();
+                nuevaImp.setCodigoAgrupador(request.getCodImportacion());
+                nuevaImp.setEstado(EstadoImportacion.ORDENADO);
+                nuevaImp.setSumaFobTotal(BigDecimal.ZERO);
+                // ... setear otros en cero ...
+                compra.setImportacion(importacionRepository.save(nuevaImp));
+            }
+        }
+
+        // ====================================================
+        // 🆕 5. INSERTAR NUEVOS DETALLES Y SUMAR NUEVO STOCK
+        // ====================================================
+        if (request.getDetalles() != null) {
+            for (CompraRequestDTO.DetalleRequestDTO detReq : request.getDetalles()) {
+                Producto producto = productoRepository.findById(detReq.getProductoId())
+                        .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detReq.getProductoId()));
+
+                CompraDetalle detalle = new CompraDetalle();
+                detalle.setCompra(compra);
+                detalle.setProducto(producto);
+                detalle.setCantidad(detReq.getCantidad());
+                detalle.setPrecioUnitario(detReq.getPrecioUnitario());
+                detalle.calcularImporte();
+
+                if (detReq.getAlmacenId() != null) {
+                    detalle.setAlmacen(almacenRepository.findById(detReq.getAlmacenId().longValue()).orElse(null));
+                }
+
+                // SUMAR NUEVO STOCK
+                if (compra.getTipoCompra() == TipoCompra.BIEN) {
+                    int stock = producto.getStockActual() != null ? producto.getStockActual() : 0;
+                    producto.setStockActual(stock + detReq.getCantidad());
+
+                    // Actualizar precio referencia
+                    if (compra.getCodImportacion() != null) {
+                        producto.setPrecioChina(detReq.getPrecioUnitario());
+                    } else {
+                        producto.setCostoTotal(detReq.getPrecioUnitario());
+                    }
+                    productoRepository.save(producto);
+                }
+
+                // Agregar a la lista de la entidad (si usas CascadeType.ALL) o guardar directo
+                detalleRepository.save(detalle);
+            }
+        }
+
+        // Recalcular estado de pago (Saldo)
+        BigDecimal totalPagado = compra.getMontoPagadoInicial(); // O recalcular desde tabla pagos
+        if(compra.getPagos() != null) {
+            totalPagado = compra.getPagos().stream().map(PagoCompra::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        BigDecimal saldo = compra.getTotal().subtract(totalPagado);
+        compra.setSaldoPendiente(saldo.max(BigDecimal.ZERO));
+        compra.setEstado((saldo.compareTo(BigDecimal.ZERO) <= 0) ? EstadoCompra.COMPLETADA : EstadoCompra.REGISTRADA);
+
+        Compra compraGuardada = compraRepository.save(compra);
+
+        // 6. ACTUALIZAR TOTALES DE IMPORTACIÓN (Vieja y Nueva)
+        if (compraGuardada.getImportacion() != null) {
+            actualizarTotalesImportacion(compraGuardada.getImportacion());
+        }
+        // Si cambió de importación, actualizar también la anterior (si existe)
+        if (codImportacionAnterior != null && !codImportacionAnterior.equals(request.getCodImportacion())) {
+            importacionRepository.findByCodigoAgrupador(codImportacionAnterior)
+                    .ifPresent(this::actualizarTotalesImportacion);
+        }
+
+        return obtenerCompra(compraGuardada.getId());
+    }
+
     // =========================================================
     // ✅ MÉTODOS AUXILIARES
     // =========================================================

@@ -15,7 +15,7 @@ public interface CompraService {
     List<CompraResponseDTO> listarTodas();
     List<CompraResponseDTO> listarPorProveedor(Integer proveedorId);
     List<CompraResponseDTO> buscarPorNumero(String numero);
-
+    CompraResponseDTO actualizarCompra(Integer id, CompraRequestDTO request);
     // ✅ NUEVO: Para listar facturas que pertenecen a una importación específica
     // Útil para ver qué facturas se van a agrupar antes de crear la carpeta
     List<CompraResponseDTO> listarPorCodigoImportacion(String codImportacion);
