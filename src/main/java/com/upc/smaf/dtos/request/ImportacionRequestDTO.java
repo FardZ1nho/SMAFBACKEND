@@ -3,7 +3,7 @@ package com.upc.smaf.dtos.request;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Map; // ✅ Importante para recibir el mapa de Ad Valorem
+import java.util.Map;
 
 @Data
 public class ImportacionRequestDTO {
@@ -25,38 +25,31 @@ public class ImportacionRequestDTO {
     // 💰 GASTOS GLOBALES (INPUTS DEL USUARIO)
     // ==========================================
 
-    // --- GRUPO A: VOLUMEN (CBM) ---
     private BigDecimal costoFlete;
     private BigDecimal costoAlmacenajeCft;
     private BigDecimal costoTransporteSjl;
     private BigDecimal costoPersonalDescarga;
     private BigDecimal costoMontacarga;
 
-    // --- GRUPO B: PESO (KG) ---
     private BigDecimal costoDesconsolidacion;
 
-    // --- GRUPO C: VALOR (FOB) ---
     private BigDecimal costoVistosBuenos;
     private BigDecimal costoTransmision;
     private BigDecimal costoComisionAgencia;
-    private BigDecimal costoVobo; // VºBº
+    private BigDecimal costoVobo;
     private BigDecimal costoGastosOperativos;
     private BigDecimal costoResguardo;
 
-    // --- IMPUESTOS ---
     private BigDecimal costoIgv;
     private BigDecimal costoIpm;
     private BigDecimal costoPercepcion;
 
-    // ⚠️ EL AD VALOREM YA NO ES UN INPUT ÚNICO, AHORA ES UN MAPA
-    // Key: ID de la Factura (Compra), Value: Monto Manual
-    private Map<Integer, BigDecimal> adValoremPorFactura;
+    // ✅ MODIFICACIÓN CLAVE: MAPA DE AD VALOREM POR ÍTEM
+    // Key: ID del CompraDetalle, Value: Monto Total de Ad Valorem para ese ítem
+    private Map<Integer, BigDecimal> adValoremPorItem;
 
-    // (Opcional) Puedes dejar este campo si quieres enviar la suma total desde el front,
-    // pero el backend la recalculará sumando el mapa.
-    private BigDecimal costoAdv;
+    private BigDecimal costoAdv; // Opcional, lo recalcula el backend.
 
-    // --- OTROS ---
     private BigDecimal costoOtros1;
     private BigDecimal costoOtros2;
     private BigDecimal costoOtros3;

@@ -20,12 +20,10 @@ public class ImportacionResponseDTO {
     private String agenteAduanas;
     private String canal;
 
-    // TOTALES CABECERA
     private BigDecimal sumaFobTotal;
     private BigDecimal pesoTotalKg;
     private BigDecimal cbmTotal;
 
-    // COSTOS GLOBALES (Inputs)
     private BigDecimal costoFlete;
     private BigDecimal costoAlmacenajeCft;
     private BigDecimal costoTransporteSjl;
@@ -44,83 +42,67 @@ public class ImportacionResponseDTO {
     private BigDecimal costoIgv;
     private BigDecimal costoIpm;
     private BigDecimal costoPercepcion;
-    private BigDecimal costoAdv; // Suma total informativa
+    private BigDecimal costoAdv;
 
     private BigDecimal costoOtros1;
     private BigDecimal costoOtros2;
     private BigDecimal costoOtros3;
     private BigDecimal costoOtros4;
 
-    // LISTA DE FACTURAS
     private List<CompraResumenDTO> facturasComerciales;
 
-    // ==========================================
-    // 📄 DTO DE LA FACTURA (NIVEL 1)
-    // ==========================================
     @Data
     public static class CompraResumenDTO {
         private Integer id;
         private String serie;
         private String numero;
         private String nombreProveedor;
-        private BigDecimal total; // FOB Total Factura
+        private BigDecimal total;
         private String moneda;
         private BigDecimal pesoNetoKg;
         private BigDecimal cbm;
 
-        // --- DETALLE PRORRATEADO COMPLETO (NIVEL 1) ---
-        // Estos campos deben coincidir con la Entidad Compra actualizada
-
-        // Grupo Volumen
         private BigDecimal proFlete;
         private BigDecimal proAlmacenaje;
         private BigDecimal proTransporte;
-        private BigDecimal proPersonalDescarga; // Nuevo
-        private BigDecimal proMontacarga;       // Nuevo
+        private BigDecimal proPersonalDescarga;
+        private BigDecimal proMontacarga;
 
-        // Grupo Peso
         private BigDecimal proDesconsolidacion;
 
-        // Grupo Valor / Aduanas
-        private BigDecimal proVistosBuenos;     // Nuevo
-        private BigDecimal proTransmision;      // Nuevo
-        private BigDecimal proComisionAgencia;  // Nuevo
-        private BigDecimal proVobo;             // Nuevo
-        private BigDecimal proGastosOperativos; // Nuevo
-        private BigDecimal proResguardo;        // Nuevo
+        private BigDecimal proVistosBuenos;
+        private BigDecimal proTransmision;
+        private BigDecimal proComisionAgencia;
+        private BigDecimal proVobo;
+        private BigDecimal proGastosOperativos;
+        private BigDecimal proResguardo;
 
-        // Grupo Impuestos
         private BigDecimal proAdv;
-        private BigDecimal proIgv;              // Nuevo
-        private BigDecimal proIpm;              // Nuevo
-        private BigDecimal proPercepcion;       // Nuevo
+        private BigDecimal proIgv;
+        private BigDecimal proIpm;
+        private BigDecimal proPercepcion;
 
-        // Grupo Otros
-        private BigDecimal proOtros1;           // Nuevo
-        private BigDecimal proOtros2;           // Nuevo
-        private BigDecimal proOtros3;           // Nuevo
-        private BigDecimal proOtros4;           // Nuevo
+        private BigDecimal proOtros1;
+        private BigDecimal proOtros2;
+        private BigDecimal proOtros3;
+        private BigDecimal proOtros4;
 
-        private BigDecimal costoTotalImportacion; // Landed Cost Factura
+        private BigDecimal costoTotalImportacion;
 
-        // LISTA DE ÍTEMS
         private List<DetalleItemDTO> items;
     }
 
-    // ==========================================
-    // 📦 DTO DEL ÍTEM / PRODUCTO (NIVEL 2)
-    // ==========================================
     @Data
     public static class DetalleItemDTO {
+        // ✅ NUEVO: ID DEL DETALLE PARA ENVIARLO AL BACKEND
+        private Integer id;
+
         private String nombreProducto;
         private BigDecimal cantidad;
         private BigDecimal precioUnitarioFob;
-        private BigDecimal importeFob; // Total FOB del ítem
+        private BigDecimal importeFob;
 
-        private BigDecimal factorParticipacion; // % respecto a la factura
-
-        // ✅ DESGLOSE DE COSTOS UNITARIOS (CALCULADO)
-        // Estos campos ahora existen para que la tabla de items tenga todas las columnas
+        private BigDecimal factorParticipacion;
 
         private BigDecimal itemFlete;
         private BigDecimal itemAlmacenaje;
@@ -137,7 +119,7 @@ public class ImportacionResponseDTO {
         private BigDecimal itemGastosOp;
         private BigDecimal itemResguardo;
 
-        private BigDecimal itemAdv;
+        private BigDecimal itemAdv; // Este es el que el Frontend leerá y actualizará
         private BigDecimal itemIgv;
         private BigDecimal itemIpm;
         private BigDecimal itemPercepcion;
@@ -145,7 +127,7 @@ public class ImportacionResponseDTO {
         private BigDecimal itemOtros1;
         private BigDecimal itemOtros2;
 
-        private BigDecimal costoUnitarioLanded; // Costo Final Unitario
-        private BigDecimal costoTotalLanded;    // Costo Final Total
+        private BigDecimal costoUnitarioLanded;
+        private BigDecimal costoTotalLanded;
     }
 }

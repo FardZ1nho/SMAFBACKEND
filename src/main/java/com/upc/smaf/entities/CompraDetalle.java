@@ -45,6 +45,10 @@ public class CompraDetalle {
     // ✅ NUEVOS CAMPOS PARA EL PRORRATEO (COSTOS REALES)
     // =================================================================
 
+    // ✅ NUEVO: Guardar el Ad Valorem ingresado manualmente para este producto
+    @Column(name = "ad_valorem_item", precision = 12, scale = 2)
+    private BigDecimal adValoremItem = BigDecimal.ZERO;
+
     // Costo Unitario Final (FOB + Flete + Aduanas + etc. por unidad)
     // Este es el valor que debería ir al Kardex.
     @Column(name = "costo_unitario_landed", precision = 12, scale = 4)
@@ -55,9 +59,15 @@ public class CompraDetalle {
     private BigDecimal costoTotalLanded;
 
     // Método helper para calcular el total FOB antes de guardar
+    @PrePersist
+    @PreUpdate
     public void calcularImporte() {
         if (this.precioUnitario != null && this.cantidad != null) {
             this.importeTotal = this.precioUnitario.multiply(new BigDecimal(this.cantidad));
+        }
+        // Evitar nulos en el Ad Valorem al guardar
+        if (this.adValoremItem == null) {
+            this.adValoremItem = BigDecimal.ZERO;
         }
     }
 }

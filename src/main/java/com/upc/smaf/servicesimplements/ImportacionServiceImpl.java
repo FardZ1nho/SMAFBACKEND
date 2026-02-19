@@ -21,6 +21,7 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     private final ImportacionRepository importacionRepository;
     private final CompraRepository compraRepository;
+    private final CompraDetalleRepository compraDetalleRepository; // ✅ Necesario para guardar ítems
 
     @Override
     public List<ImportacionResponseDTO> listarTodas() {
@@ -53,7 +54,7 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     @Override
     public ImportacionResponseDTO guardar(ImportacionRequestDTO request) {
-        return null;
+        return null; // Implementar si es necesario
     }
 
     @Override
@@ -79,30 +80,60 @@ public class ImportacionServiceImpl implements ImportacionService {
         imp.setCostoTransporteSjl(orZero(request.getCostoTransporteSjl()));
         imp.setCostoPersonalDescarga(orZero(request.getCostoPersonalDescarga()));
         imp.setCostoMontacarga(orZero(request.getCostoMontacarga()));
-
         imp.setCostoDesconsolidacion(orZero(request.getCostoDesconsolidacion()));
-
         imp.setCostoVistosBuenos(orZero(request.getCostoVistosBuenos()));
         imp.setCostoTransmision(orZero(request.getCostoTransmision()));
         imp.setCostoComisionAgencia(orZero(request.getCostoComisionAgencia()));
         imp.setCostoVobo(orZero(request.getCostoVobo()));
         imp.setCostoGastosOperativos(orZero(request.getCostoGastosOperativos()));
         imp.setCostoResguardo(orZero(request.getCostoResguardo()));
-
         imp.setCostoIgv(orZero(request.getCostoIgv()));
         imp.setCostoIpm(orZero(request.getCostoIpm()));
         imp.setCostoPercepcion(orZero(request.getCostoPercepcion()));
-
         imp.setCostoOtros1(orZero(request.getCostoOtros1()));
         imp.setCostoOtros2(orZero(request.getCostoOtros2()));
         imp.setCostoOtros3(orZero(request.getCostoOtros3()));
         imp.setCostoOtros4(orZero(request.getCostoOtros4()));
 
         // =================================================================================
-        // 🚀 3. PRORRATEO NIVEL 1: DISTRIBUCIÓN A FACTURAS
+        // 🚀 3. PROCESAR AD VALOREM MANUAL POR ÍTEM (DE ABAJO HACIA ARRIBA)
         // =================================================================================
 
         List<Compra> facturas = compraRepository.findByCodImportacion(imp.getCodigoAgrupador());
+        Map<Integer, BigDecimal> advMap = request.getAdValoremPorItem();
+
+        BigDecimal sumaAdValoremTotalImportacion = BigDecimal.ZERO;
+
+        for (Compra c : facturas) {
+            if (c.getEstado() == EstadoCompra.ANULADA) continue;
+
+            BigDecimal sumaAdValoremFactura = BigDecimal.ZERO;
+
+            // Iteramos los detalles para guardar el nuevo Ad Valorem ingresado en el Front
+            if (c.getDetalles() != null) {
+                for (CompraDetalle detalle : c.getDetalles()) {
+                    if (advMap != null && advMap.containsKey(detalle.getId())) {
+                        detalle.setAdValoremItem(orZero(advMap.get(detalle.getId())));
+                    } else if (detalle.getAdValoremItem() == null) {
+                        detalle.setAdValoremItem(BigDecimal.ZERO);
+                    }
+
+                    sumaAdValoremFactura = sumaAdValoremFactura.add(detalle.getAdValoremItem());
+                    compraDetalleRepository.save(detalle); // Guardar el ítem actualizado
+                }
+            }
+
+            // Asignamos la suma de sus ítems a la factura
+            c.setProAdv(sumaAdValoremFactura);
+            sumaAdValoremTotalImportacion = sumaAdValoremTotalImportacion.add(sumaAdValoremFactura);
+        }
+
+        // Asignamos el total global a la importación
+        imp.setCostoAdv(sumaAdValoremTotalImportacion);
+
+        // =================================================================================
+        // 🚀 4. PRORRATEO TRADICIONAL (DE ARRIBA HACIA ABAJO)
+        // =================================================================================
 
         BigDecimal totalFob = BigDecimal.ZERO;
         BigDecimal totalPeso = BigDecimal.ZERO;
@@ -120,8 +151,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         imp.setPesoTotalKg(totalPeso);
         imp.setCbmTotal(totalCbm);
 
-        BigDecimal sumaAdValoremManual = BigDecimal.ZERO;
-
         for (Compra c : facturas) {
             if (c.getEstado() == EstadoCompra.ANULADA) continue;
 
@@ -129,109 +158,76 @@ public class ImportacionServiceImpl implements ImportacionService {
             BigDecimal basePeso = orZero(c.getPesoNetoKg());
             BigDecimal baseCbm = orZero(c.getCbm());
 
-            // --- CÁLCULOS DE PRORRATEO ---
+            // Cálculos
             BigDecimal pFlete = prorratear(imp.getCostoFlete(), totalCbm, baseCbm);
             BigDecimal pAlmacen = prorratear(imp.getCostoAlmacenajeCft(), totalCbm, baseCbm);
             BigDecimal pTransporte = prorratear(imp.getCostoTransporteSjl(), totalCbm, baseCbm);
             BigDecimal pDescarga = prorratear(imp.getCostoPersonalDescarga(), totalCbm, baseCbm);
             BigDecimal pMontacarga = prorratear(imp.getCostoMontacarga(), totalCbm, baseCbm);
-
             BigDecimal pDesconsol = prorratear(imp.getCostoDesconsolidacion(), totalPeso, basePeso);
-
             BigDecimal pVistos = prorratear(imp.getCostoVistosBuenos(), totalFob, baseValor);
             BigDecimal pTransm = prorratear(imp.getCostoTransmision(), totalFob, baseValor);
             BigDecimal pAgencia = prorratear(imp.getCostoComisionAgencia(), totalFob, baseValor);
             BigDecimal pVobo = prorratear(imp.getCostoVobo(), totalFob, baseValor);
             BigDecimal pGastosOp = prorratear(imp.getCostoGastosOperativos(), totalFob, baseValor);
             BigDecimal pResguardo = prorratear(imp.getCostoResguardo(), totalFob, baseValor);
-
             BigDecimal pIgv = prorratear(imp.getCostoIgv(), totalFob, baseValor);
             BigDecimal pIpm = prorratear(imp.getCostoIpm(), totalFob, baseValor);
             BigDecimal pPercep = prorratear(imp.getCostoPercepcion(), totalFob, baseValor);
-
             BigDecimal pOtros1 = prorratear(imp.getCostoOtros1(), totalFob, baseValor);
             BigDecimal pOtros2 = prorratear(imp.getCostoOtros2(), totalFob, baseValor);
             BigDecimal pOtros3 = prorratear(imp.getCostoOtros3(), totalFob, baseValor);
             BigDecimal pOtros4 = prorratear(imp.getCostoOtros4(), totalFob, baseValor);
 
-            // Ad Valorem Manual
-            BigDecimal pAdv = BigDecimal.ZERO;
-            Map<Integer, BigDecimal> mapAdv = request.getAdValoremPorFactura();
-
-            if (mapAdv != null && mapAdv.containsKey(c.getId())) {
-                pAdv = mapAdv.get(c.getId());
-                if (pAdv == null) pAdv = BigDecimal.ZERO;
-            } else {
-                pAdv = orZero(c.getProAdv());
-            }
-            sumaAdValoremManual = sumaAdValoremManual.add(pAdv);
-
-            // =====================================================================
-            // 🛑 CORRECCIÓN: GUARDAR EN LOS CAMPOS INDIVIDUALES (SETTERS)
-            // =====================================================================
-
-            // Grupo Volumen
             c.setProFlete(pFlete);
             c.setProAlmacenaje(pAlmacen);
             c.setProTransporte(pTransporte);
-            c.setProPersonalDescarga(pDescarga); // ✅ Antes faltaba
-            c.setProMontacarga(pMontacarga);     // ✅ Antes faltaba
-
-            // Grupo Peso
+            c.setProPersonalDescarga(pDescarga);
+            c.setProMontacarga(pMontacarga);
             c.setProDesconsolidacion(pDesconsol);
+            c.setProVistosBuenos(pVistos);
+            c.setProTransmision(pTransm);
+            c.setProComisionAgencia(pAgencia);
+            c.setProVobo(pVobo);
+            c.setProGastosOperativos(pGastosOp);
+            c.setProResguardo(pResguardo);
+            c.setProIgv(pIgv);
+            c.setProIpm(pIpm);
+            c.setProPercepcion(pPercep);
+            c.setProOtros1(pOtros1);
+            c.setProOtros2(pOtros2);
+            c.setProOtros3(pOtros3);
+            c.setProOtros4(pOtros4);
 
-            // Grupo Valor / Aduanas
-            c.setProVistosBuenos(pVistos);       // ✅ Nuevo
-            c.setProTransmision(pTransm);        // ✅ Nuevo
-            c.setProComisionAgencia(pAgencia);   // ✅ Nuevo
-            c.setProVobo(pVobo);                 // ✅ Nuevo
-            c.setProGastosOperativos(pGastosOp); // ✅ Nuevo
-            c.setProResguardo(pResguardo);       // ✅ Nuevo
-
-            // Grupo Impuestos
-            c.setProAdv(pAdv);
-            c.setProIgv(pIgv);                   // ✅ Nuevo
-            c.setProIpm(pIpm);                   // ✅ Nuevo
-            c.setProPercepcion(pPercep);         // ✅ Nuevo
-
-            // Grupo Otros
-            c.setProOtros1(pOtros1);             // ✅ Nuevo
-            c.setProOtros2(pOtros2);             // ✅ Nuevo
-            c.setProOtros3(pOtros3);             // ✅ Nuevo
-            c.setProOtros4(pOtros4);             // ✅ Nuevo
-
-            // --- MANTENER CAMPOS ANTIGUOS (SOLO POR SEGURIDAD/COMPATIBILIDAD) ---
+            // Mantenimiento de campos antiguos
             c.setProCargaDescarga(pDescarga.add(pMontacarga));
             c.setProGastosAduaneros(pVistos.add(pTransm).add(pAgencia).add(pVobo).add(pGastosOp));
             c.setProSeguroResguardo(pResguardo);
             c.setProImpuestos(pIgv.add(pIpm).add(pPercep));
             c.setProOtrosGastos(pOtros1.add(pOtros2).add(pOtros3).add(pOtros4));
 
-            // Costo Landed Total Factura
+            // Costo Landed Factura (Incluye el AdValorem sumado desde los ítems)
             BigDecimal costoLandedFactura = baseValor
                     .add(pFlete).add(pAlmacen).add(pTransporte).add(pDescarga).add(pMontacarga)
                     .add(pDesconsol)
                     .add(pVistos).add(pTransm).add(pAgencia).add(pVobo).add(pGastosOp)
                     .add(pResguardo)
                     .add(pIgv).add(pIpm).add(pPercep)
-                    .add(pAdv)
+                    .add(c.getProAdv()) // ✅ Usa el AdValorem recién sumado
                     .add(pOtros1).add(pOtros2).add(pOtros3).add(pOtros4);
 
             c.setCostoTotalImportacion(costoLandedFactura);
 
-            // 🚀 4. PRORRATEO NIVEL 2: ITEMS
+            // 🚀 5. PRORRATEO NIVEL 2: ÍTEMS
             distribuirCostosAItems(c);
 
             compraRepository.save(c);
         }
 
-        imp.setCostoAdv(sumaAdValoremManual);
         Importacion saved = importacionRepository.save(imp);
-
         return mapToResponseDTO(saved);
     }
 
-    // ✅ PRORRATEO DE ÍTEMS (NIVEL 2)
     private void distribuirCostosAItems(Compra c) {
         List<CompraDetalle> detalles = c.getDetalles();
         if (detalles == null || detalles.isEmpty()) return;
@@ -239,17 +235,20 @@ public class ImportacionServiceImpl implements ImportacionService {
         BigDecimal totalFobFactura = c.getTotal();
         if (totalFobFactura == null || totalFobFactura.compareTo(BigDecimal.ZERO) == 0) return;
 
-        BigDecimal totalSobrecostos = c.getCostoTotalImportacion().subtract(totalFobFactura);
+        // Sobrecostos a prorratear (SIN INCLUIR EL AD VALOREM, PORQUE YA ES MANUAL POR ÍTEM)
+        BigDecimal totalSobrecostosProrrateables = c.getCostoTotalImportacion()
+                .subtract(totalFobFactura)
+                .subtract(orZero(c.getProAdv()));
 
         for (CompraDetalle item : detalles) {
             BigDecimal importeFobItem = item.getImporteTotal();
             if (importeFobItem == null) importeFobItem = BigDecimal.ZERO;
 
             BigDecimal factor = importeFobItem.divide(totalFobFactura, 10, RoundingMode.HALF_UP);
+            BigDecimal sobrecostoItem = totalSobrecostosProrrateables.multiply(factor);
 
-            BigDecimal sobrecostoItem = totalSobrecostos.multiply(factor);
-
-            BigDecimal costoTotalLanded = importeFobItem.add(sobrecostoItem);
+            // El Costo Total Landed del Ítem es: FOB + Sobrecostos Prorrateados + Ad Valorem Manual del Ítem
+            BigDecimal costoTotalLanded = importeFobItem.add(sobrecostoItem).add(orZero(item.getAdValoremItem()));
 
             BigDecimal costoUnitarioLanded = BigDecimal.ZERO;
             if (item.getCantidad() != null && item.getCantidad() > 0) {
@@ -281,7 +280,7 @@ public class ImportacionServiceImpl implements ImportacionService {
     }
 
     // =================================================================================
-    // 📄 MAPEO A DTO (CON DESGLOSE TOTAL DE ÍTEMS)
+    // 📄 MAPEO A DTO (CON DESGLOSE TOTAL DE ÍTEMS Y ID DETALLE)
     // =================================================================================
     private ImportacionResponseDTO mapToResponseDTO(Importacion imp) {
         ImportacionResponseDTO dto = new ImportacionResponseDTO();
@@ -297,12 +296,10 @@ public class ImportacionServiceImpl implements ImportacionService {
         dto.setAgenteAduanas(imp.getAgenteAduanas());
         dto.setCanal(imp.getCanal());
 
-        // TOTALES
         dto.setSumaFobTotal(imp.getSumaFobTotal());
         dto.setPesoTotalKg(imp.getPesoTotalKg());
         dto.setCbmTotal(imp.getCbmTotal());
 
-        // COSTOS
         dto.setCostoFlete(imp.getCostoFlete());
         dto.setCostoAlmacenajeCft(imp.getCostoAlmacenajeCft());
         dto.setCostoTransporteSjl(imp.getCostoTransporteSjl());
@@ -324,7 +321,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         dto.setCostoOtros3(imp.getCostoOtros3());
         dto.setCostoOtros4(imp.getCostoOtros4());
 
-        // FACTURAS
         List<Compra> facturas = compraRepository.findByCodImportacion(imp.getCodigoAgrupador());
 
         List<ImportacionResponseDTO.CompraResumenDTO> resumen = facturas.stream().map(c -> {
@@ -338,7 +334,6 @@ public class ImportacionServiceImpl implements ImportacionService {
             r.setPesoNetoKg(c.getPesoNetoKg());
             r.setCbm(c.getCbm());
 
-            // BASES
             BigDecimal totalValor = imp.getSumaFobTotal();
             BigDecimal totalPeso = imp.getPesoTotalKg();
             BigDecimal totalCbm = imp.getCbmTotal();
@@ -347,28 +342,22 @@ public class ImportacionServiceImpl implements ImportacionService {
             BigDecimal basePeso = orZero(c.getPesoNetoKg());
             BigDecimal baseCbm = orZero(c.getCbm());
 
-            // PRORRATEO VISUAL FACTURA
             r.setProFlete(prorratear(imp.getCostoFlete(), totalCbm, baseCbm));
             r.setProAlmacenaje(prorratear(imp.getCostoAlmacenajeCft(), totalCbm, baseCbm));
             r.setProTransporte(prorratear(imp.getCostoTransporteSjl(), totalCbm, baseCbm));
             r.setProPersonalDescarga(prorratear(imp.getCostoPersonalDescarga(), totalCbm, baseCbm));
             r.setProMontacarga(prorratear(imp.getCostoMontacarga(), totalCbm, baseCbm));
-
             r.setProDesconsolidacion(prorratear(imp.getCostoDesconsolidacion(), totalPeso, basePeso));
-
             r.setProVistosBuenos(prorratear(imp.getCostoVistosBuenos(), totalValor, baseValor));
             r.setProTransmision(prorratear(imp.getCostoTransmision(), totalValor, baseValor));
             r.setProComisionAgencia(prorratear(imp.getCostoComisionAgencia(), totalValor, baseValor));
             r.setProVobo(prorratear(imp.getCostoVobo(), totalValor, baseValor));
             r.setProGastosOperativos(prorratear(imp.getCostoGastosOperativos(), totalValor, baseValor));
             r.setProResguardo(prorratear(imp.getCostoResguardo(), totalValor, baseValor));
-
             r.setProIgv(prorratear(imp.getCostoIgv(), totalValor, baseValor));
             r.setProIpm(prorratear(imp.getCostoIpm(), totalValor, baseValor));
             r.setProPercepcion(prorratear(imp.getCostoPercepcion(), totalValor, baseValor));
-
             r.setProAdv(orZero(c.getProAdv()));
-
             r.setProOtros1(prorratear(imp.getCostoOtros1(), totalValor, baseValor));
             r.setProOtros2(prorratear(imp.getCostoOtros2(), totalValor, baseValor));
             r.setProOtros3(prorratear(imp.getCostoOtros3(), totalValor, baseValor));
@@ -376,24 +365,24 @@ public class ImportacionServiceImpl implements ImportacionService {
 
             r.setCostoTotalImportacion(c.getCostoTotalImportacion());
 
-            // ✅ ITEMS (NIVEL 2) CON DESGLOSE COMPLETO POR COLUMNA
             if (c.getDetalles() != null) {
                 List<ImportacionResponseDTO.DetalleItemDTO> itemsDto = c.getDetalles().stream().map(d -> {
                     ImportacionResponseDTO.DetalleItemDTO item = new ImportacionResponseDTO.DetalleItemDTO();
+
+                    // ✅ AHORA ENVIAMOS EL ID AL FRONTEND
+                    item.setId(d.getId());
 
                     item.setNombreProducto(d.getProducto().getNombre());
                     item.setCantidad(new BigDecimal(d.getCantidad()));
                     item.setPrecioUnitarioFob(d.getPrecioUnitario());
                     item.setImporteFob(d.getImporteTotal());
 
-                    // Factor de Participación
                     BigDecimal factor = BigDecimal.ZERO;
                     if (c.getTotal() != null && c.getTotal().compareTo(BigDecimal.ZERO) > 0 && d.getImporteTotal() != null) {
                         factor = d.getImporteTotal().divide(c.getTotal(), 10, RoundingMode.HALF_UP);
                     }
                     item.setFactorParticipacion(factor);
 
-                    // ⬇️ AQUÍ ESTÁ LA MAGIA: Calculamos cada columna por separado usando los campos de Compra
                     item.setItemFlete(orZero(c.getProFlete()).multiply(factor));
                     item.setItemAlmacenaje(orZero(c.getProAlmacenaje()).multiply(factor));
                     item.setItemTransporte(orZero(c.getProTransporte()).multiply(factor));
@@ -409,10 +398,12 @@ public class ImportacionServiceImpl implements ImportacionService {
                     item.setItemGastosOp(orZero(c.getProGastosOperativos()).multiply(factor));
                     item.setItemResguardo(orZero(c.getProResguardo()).multiply(factor));
 
-                    item.setItemAdv(orZero(c.getProAdv()).multiply(factor));
                     item.setItemIgv(orZero(c.getProIgv()).multiply(factor));
                     item.setItemIpm(orZero(c.getProIpm()).multiply(factor));
                     item.setItemPercepcion(orZero(c.getProPercepcion()).multiply(factor));
+
+                    // ✅ LEEMOS EL AD VALOREM REAL DE LA BASE DE DATOS
+                    item.setItemAdv(orZero(d.getAdValoremItem()));
 
                     item.setItemOtros1(orZero(c.getProOtros1()).multiply(factor));
                     item.setItemOtros2(orZero(c.getProOtros2()).multiply(factor));
