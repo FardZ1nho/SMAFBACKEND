@@ -1,9 +1,9 @@
 package com.upc.smaf.controllers;
 
-import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO; // 👈 ASEGÚRATE DE IMPORTAR ESTO
+import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO;
 import com.upc.smaf.dtos.request.ProductoRequestDTO;
 import com.upc.smaf.dtos.response.ProductoResponseDTO;
-import com.upc.smaf.entities.ProductoAlmacen; // 👈 Para devolver el movimiento (o usa un DTO)
+import com.upc.smaf.entities.ProductoAlmacen;
 import com.upc.smaf.serviceinterface.ProductoService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -12,11 +12,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/productos")
-
 @RequiredArgsConstructor
+@CrossOrigin(origins = "*") // 👈 Agregado para evitar problemas de CORS con Angular
 public class ProductoController {
 
     private final ProductoService productoService;
@@ -28,39 +29,42 @@ public class ProductoController {
     public ResponseEntity<ProductoResponseDTO> crearProducto(
             @Valid @RequestBody ProductoRequestDTO request) {
         try {
-            // Este método ya no pide stock, crea el producto con stock 0
             ProductoResponseDTO response = productoService.crearProducto(request);
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(null); // O manejar mejor el error
+            return ResponseEntity.badRequest().body(null);
         }
     }
 
     // ==========================================
-    // 2. NUEVO: INGRESO DE STOCK (LOGÍSTICA)
+    // 2. INGRESO DE STOCK (LOGÍSTICA)
     // ==========================================
-    /**
-     * Este endpoint se usa cuando llega el camión con mercadería.
-     * Recibe: idProducto, idAlmacen, cantidad.
-     */
     @PostMapping("/ingreso-stock")
     public ResponseEntity<?> ingresarStock(
             @Valid @RequestBody ProductoAlmacenRequestDTO request) {
         try {
-            // Ejecutamos la lógica (esto funciona bien)
             productoService.agregarStock(request);
-
-            // ✅ CAMBIO CLAVE: En lugar de devolver el objeto 'movimiento' (que tiene proxies),
-            // devolvemos un mapa simple o un mensaje. Jackson será feliz con esto.
             return ResponseEntity.ok(java.util.Collections.singletonMap("mensaje", "Stock ingresado correctamente"));
-
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
     // ==========================================
-    // CRUD BÁSICO Y CONSULTAS (Se mantienen igual)
+    // ✅ 3. NUEVO: SINCRONIZADOR MAESTRO DE STOCK
+    // ==========================================
+    @PostMapping("/sincronizar-stock")
+    public ResponseEntity<?> sincronizarStockReal() {
+        try {
+            productoService.sincronizarStockReal();
+            return ResponseEntity.ok(Map.of("message", "Stock sincronizado correctamente con los almacenes reales."));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    // ==========================================
+    // CRUD BÁSICO Y CONSULTAS
     // ==========================================
 
     @GetMapping("/{id}")

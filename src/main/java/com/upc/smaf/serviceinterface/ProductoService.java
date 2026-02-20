@@ -1,9 +1,9 @@
 package com.upc.smaf.serviceinterface;
 
 import com.upc.smaf.dtos.request.ProductoRequestDTO;
-import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO; // 👈 1. IMPORTANTE: Importar el DTO
+import com.upc.smaf.dtos.request.ProductoAlmacenRequestDTO;
 import com.upc.smaf.dtos.response.ProductoResponseDTO;
-import com.upc.smaf.entities.ProductoAlmacen; // 👈 2. IMPORTANTE: Importar la Entidad de respuesta
+import com.upc.smaf.entities.ProductoAlmacen;
 import java.util.List;
 
 public interface ProductoService {
@@ -33,8 +33,10 @@ public interface ProductoService {
 
     String obtenerEstadoStock(Integer idProducto);
 
-    // 👇👇👇 3. AGREGA ESTA LÍNEA AL FINAL (Esto solucionará el error rojo) 👇👇👇
     ProductoAlmacen agregarStock(ProductoAlmacenRequestDTO request);
 
     void reducirStock(Integer idProducto, int cantidadVenta);
+
+    // ✅ NUEVO: Método para cuadrar la base de datos con la realidad física
+    void sincronizarStockReal();
 }

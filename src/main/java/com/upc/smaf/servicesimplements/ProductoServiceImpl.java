@@ -99,9 +99,6 @@ public class ProductoServiceImpl implements ProductoService {
             throw new RuntimeException("No se puede agregar stock físico a un KIT. Agregue stock a sus componentes individuales.");
         }
 
-        // Opcional: Bloquear agregar stock a servicios si quieres ser estricto
-        // if (producto.getTipo() == TipoProducto.SERVICIO) return null;
-
         Almacen almacen = almacenRepository.findById(dto.getAlmacenId())
                 .orElseThrow(() -> new RuntimeException("Almacén no encontrado"));
 
@@ -186,7 +183,7 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 4. REDUCIR STOCK (Ventas) - ✅ AQUÍ ESTÁ EL CAMBIO IMPORTANTE
+    // 4. REDUCIR STOCK (Ventas)
     // ==========================================
     @Override
     @Transactional
@@ -194,30 +191,23 @@ public class ProductoServiceImpl implements ProductoService {
         Producto producto = productoRepository.findById(idProducto)
                 .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
 
-        // ✅ CORRECCIÓN CLAVE: Si es SERVICIO, ignoramos el stock y salimos
         if (producto.getTipo() == TipoProducto.SERVICIO) {
             return;
         }
 
-        // CASO A: ES UN KIT (Virtual)
         if (producto.getTipo() == TipoProducto.KIT) {
-            // Recorremos su receta y descontamos a cada hijo
             for (ProductoKit componenteKit : producto.getComponentes()) {
                 Producto hijo = componenteKit.getComponente();
                 int cantidadNecesaria = componenteKit.getCantidad() * cantidadVenta;
-
-                // Recursividad: Descontamos a los hijos
                 reducirStock(hijo.getId(), cantidadNecesaria);
             }
             return;
         }
 
-        // CASO B: ES UN PRODUCTO FÍSICO (Stock real)
         if (producto.getStockActual() < cantidadVenta) {
             throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
         }
 
-        // Descontar de almacenes específicos si existen
         if (!producto.getProductosAlmacen().isEmpty()) {
             int cantidadRestante = cantidadVenta;
 
@@ -230,17 +220,44 @@ public class ProductoServiceImpl implements ProductoService {
                 cantidadRestante -= aDescontar;
             }
 
-            producto.calcularStockTotal(); // Recalcular total
+            producto.calcularStockTotal();
             productoRepository.save(producto);
         } else {
-            // Fallback simple si no usa almacenes
             producto.setStockActual(producto.getStockActual() - cantidadVenta);
             productoRepository.save(producto);
         }
     }
 
     // ==========================================
-    // 5. MÉTODOS DE LECTURA Y UTILITARIOS
+    // ✅ 5. NUEVO: SINCRONIZAR STOCK REAL
+    // ==========================================
+    @Override
+    @Transactional
+    public void sincronizarStockReal() {
+        List<Producto> productos = productoRepository.findAll();
+
+        for (Producto producto : productos) {
+            // Solo sincronizamos el stock físico de los productos reales
+            if (producto.getTipo() == TipoProducto.PRODUCTO) {
+                int stockReal = 0;
+
+                // Si el producto tiene registros en almacenes, los sumamos
+                if (producto.getProductosAlmacen() != null) {
+                    stockReal = producto.getProductosAlmacen().stream()
+                            .filter(pa -> pa.getActivo() != null && pa.getActivo())
+                            .mapToInt(ProductoAlmacen::getStock)
+                            .sum();
+                }
+
+                // Actualizamos la columna principal con la verdad absoluta
+                producto.setStockActual(stockReal);
+                productoRepository.save(producto);
+            }
+        }
+    }
+
+    // ==========================================
+    // 6. MÉTODOS DE LECTURA Y UTILITARIOS
     // ==========================================
 
     @Override
@@ -296,7 +313,7 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 6. ESTADOS Y STOCK VIRTUAL
+    // 7. ESTADOS Y STOCK VIRTUAL
     // ==========================================
 
     @Override
@@ -322,7 +339,6 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private int calcularStockVirtual(Producto producto) {
-        // Si es SERVICIO, retornamos un número alto para que parezca siempre disponible
         if (producto.getTipo() == TipoProducto.SERVICIO) {
             return 9999;
         }
@@ -358,7 +374,7 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     // ==========================================
-    // 7. CONVERTIDOR DTO
+    // 8. CONVERTIDOR DTO
     // ==========================================
 
     private ProductoResponseDTO convertirAResponseDTO(Producto producto) {
@@ -378,8 +394,6 @@ public class ProductoServiceImpl implements ProductoService {
 
         int stockReal = calcularStockVirtual(producto);
 
-        // Visualmente para servicios mostramos 0 o infinito, depende tu gusto.
-        // Aquí dejo 9999 si es servicio para que no salga "Agotado" en frontend
         if(producto.getTipo() == TipoProducto.SERVICIO) {
             response.setStockActual(9999);
         } else {
@@ -435,7 +449,6 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private void calcularEstadoStockVisual(ProductoResponseDTO response, int stockReal) {
-        // Si es servicio, siempre es ALTO/DISPONIBLE
         if ("SERVICIO".equals(response.getTipo())) {
             response.setEstadoStock("ALTO");
             response.setNecesitaReorden(false);
