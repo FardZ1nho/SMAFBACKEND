@@ -86,9 +86,14 @@ public class WebSecurityConfig {
                         .requestMatchers("/login").permitAll()
                         .requestMatchers("/productos/**").permitAll()
                         .requestMatchers("/categorias/**").permitAll()
-                        .requestMatchers("/dashboard/**").permitAll()  // ⭐ Agregar dashboard
-                        .requestMatchers("/clientes/**").permitAll()    // ⭐ Si necesitas clientes públicos
+                        .requestMatchers("/dashboard/**").permitAll()
+                        .requestMatchers("/clientes/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
+
+                        // ✅ SOLUCIÓN: Agregadas rutas de compras e importaciones
+                        .requestMatchers("/compras/**").permitAll()
+                        .requestMatchers("/importaciones/**").permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults())

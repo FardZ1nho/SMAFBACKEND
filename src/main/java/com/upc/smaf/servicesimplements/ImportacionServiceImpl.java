@@ -1,6 +1,7 @@
 package com.upc.smaf.servicesimplements;
 
 import com.upc.smaf.dtos.request.ImportacionRequestDTO;
+import com.upc.smaf.dtos.request.RecepcionItemDTO;
 import com.upc.smaf.dtos.response.ImportacionResponseDTO;
 import com.upc.smaf.entities.*;
 import com.upc.smaf.repositories.*;
@@ -21,7 +22,8 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     private final ImportacionRepository importacionRepository;
     private final CompraRepository compraRepository;
-    private final CompraDetalleRepository compraDetalleRepository; // ✅ Necesario para guardar ítems
+    private final CompraDetalleRepository compraDetalleRepository;
+    private final ProductoRepository productoRepository; // ✅ AÑADIDO PARA ACTUALIZAR STOCK
 
     @Override
     public List<ImportacionResponseDTO> listarTodas() {
@@ -109,7 +111,6 @@ public class ImportacionServiceImpl implements ImportacionService {
 
             BigDecimal sumaAdValoremFactura = BigDecimal.ZERO;
 
-            // Iteramos los detalles para guardar el nuevo Ad Valorem ingresado en el Front
             if (c.getDetalles() != null) {
                 for (CompraDetalle detalle : c.getDetalles()) {
                     if (advMap != null && advMap.containsKey(detalle.getId())) {
@@ -119,16 +120,14 @@ public class ImportacionServiceImpl implements ImportacionService {
                     }
 
                     sumaAdValoremFactura = sumaAdValoremFactura.add(detalle.getAdValoremItem());
-                    compraDetalleRepository.save(detalle); // Guardar el ítem actualizado
+                    compraDetalleRepository.save(detalle);
                 }
             }
 
-            // Asignamos la suma de sus ítems a la factura
             c.setProAdv(sumaAdValoremFactura);
             sumaAdValoremTotalImportacion = sumaAdValoremTotalImportacion.add(sumaAdValoremFactura);
         }
 
-        // Asignamos el total global a la importación
         imp.setCostoAdv(sumaAdValoremTotalImportacion);
 
         // =================================================================================
@@ -158,7 +157,6 @@ public class ImportacionServiceImpl implements ImportacionService {
             BigDecimal basePeso = orZero(c.getPesoNetoKg());
             BigDecimal baseCbm = orZero(c.getCbm());
 
-            // Cálculos
             BigDecimal pFlete = prorratear(imp.getCostoFlete(), totalCbm, baseCbm);
             BigDecimal pAlmacen = prorratear(imp.getCostoAlmacenajeCft(), totalCbm, baseCbm);
             BigDecimal pTransporte = prorratear(imp.getCostoTransporteSjl(), totalCbm, baseCbm);
@@ -199,26 +197,23 @@ public class ImportacionServiceImpl implements ImportacionService {
             c.setProOtros3(pOtros3);
             c.setProOtros4(pOtros4);
 
-            // Mantenimiento de campos antiguos
             c.setProCargaDescarga(pDescarga.add(pMontacarga));
             c.setProGastosAduaneros(pVistos.add(pTransm).add(pAgencia).add(pVobo).add(pGastosOp));
             c.setProSeguroResguardo(pResguardo);
             c.setProImpuestos(pIgv.add(pIpm).add(pPercep));
             c.setProOtrosGastos(pOtros1.add(pOtros2).add(pOtros3).add(pOtros4));
 
-            // Costo Landed Factura (Incluye el AdValorem sumado desde los ítems)
             BigDecimal costoLandedFactura = baseValor
                     .add(pFlete).add(pAlmacen).add(pTransporte).add(pDescarga).add(pMontacarga)
                     .add(pDesconsol)
                     .add(pVistos).add(pTransm).add(pAgencia).add(pVobo).add(pGastosOp)
                     .add(pResguardo)
                     .add(pIgv).add(pIpm).add(pPercep)
-                    .add(c.getProAdv()) // ✅ Usa el AdValorem recién sumado
+                    .add(c.getProAdv())
                     .add(pOtros1).add(pOtros2).add(pOtros3).add(pOtros4);
 
             c.setCostoTotalImportacion(costoLandedFactura);
 
-            // 🚀 5. PRORRATEO NIVEL 2: ÍTEMS
             distribuirCostosAItems(c);
 
             compraRepository.save(c);
@@ -235,7 +230,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         BigDecimal totalFobFactura = c.getTotal();
         if (totalFobFactura == null || totalFobFactura.compareTo(BigDecimal.ZERO) == 0) return;
 
-        // Sobrecostos a prorratear (SIN INCLUIR EL AD VALOREM, PORQUE YA ES MANUAL POR ÍTEM)
         BigDecimal totalSobrecostosProrrateables = c.getCostoTotalImportacion()
                 .subtract(totalFobFactura)
                 .subtract(orZero(c.getProAdv()));
@@ -247,7 +241,6 @@ public class ImportacionServiceImpl implements ImportacionService {
             BigDecimal factor = importeFobItem.divide(totalFobFactura, 10, RoundingMode.HALF_UP);
             BigDecimal sobrecostoItem = totalSobrecostosProrrateables.multiply(factor);
 
-            // El Costo Total Landed del Ítem es: FOB + Sobrecostos Prorrateados + Ad Valorem Manual del Ítem
             BigDecimal costoTotalLanded = importeFobItem.add(sobrecostoItem).add(orZero(item.getAdValoremItem()));
 
             BigDecimal costoUnitarioLanded = BigDecimal.ZERO;
@@ -262,6 +255,41 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     @Override
     public void recalcularCostos(Integer id) {
+    }
+
+    // =================================================================================
+    // ✅ NUEVO: LÓGICA DE RECEPCIÓN Y KARDEX (ACTUALIZA STOCK REAL)
+    // =================================================================================
+    @Override
+    @Transactional
+    public void confirmarRecepcion(Integer id, List<RecepcionItemDTO> items) {
+        Importacion importacion = importacionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Importación no encontrada ID: " + id));
+
+        if (importacion.getEstado() == EstadoImportacion.CERRADO || importacion.getEstado() == EstadoImportacion.LIQUIDADA) {
+            throw new RuntimeException("Esta importación ya fue recibida y cerrada anteriormente.");
+        }
+
+        for (RecepcionItemDTO item : items) {
+            CompraDetalle detalle = compraDetalleRepository.findById(item.getDetalleId())
+                    .orElseThrow(() -> new RuntimeException("Detalle no encontrado ID: " + item.getDetalleId()));
+
+            // Actualizamos la cantidad recibida en la factura
+            detalle.setCantidadRecibida(item.getCantidadRecibida());
+            compraDetalleRepository.save(detalle);
+
+            // AHORA SÍ: SUMAMOS EL STOCK REAL AL PRODUCTO
+            Producto producto = detalle.getProducto();
+            int stockActual = producto.getStockActual() != null ? producto.getStockActual() : 0;
+
+            // Sumamos solo lo que realmente contó el almacenero
+            producto.setStockActual(stockActual + item.getCantidadRecibida());
+            productoRepository.save(producto);
+        }
+
+        // Cambiamos el estado a CERRADA (Ya ingresó a almacén)
+        importacion.setEstado(EstadoImportacion.CERRADO);
+        importacionRepository.save(importacion);
     }
 
     private BigDecimal prorratear(BigDecimal costoGlobal, BigDecimal baseTotal, BigDecimal baseIndividual) {
@@ -279,9 +307,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         return val != null ? val : BigDecimal.ZERO;
     }
 
-    // =================================================================================
-    // 📄 MAPEO A DTO (CON DESGLOSE TOTAL DE ÍTEMS Y ID DETALLE)
-    // =================================================================================
     private ImportacionResponseDTO mapToResponseDTO(Importacion imp) {
         ImportacionResponseDTO dto = new ImportacionResponseDTO();
         dto.setId(imp.getId());
@@ -368,12 +393,13 @@ public class ImportacionServiceImpl implements ImportacionService {
             if (c.getDetalles() != null) {
                 List<ImportacionResponseDTO.DetalleItemDTO> itemsDto = c.getDetalles().stream().map(d -> {
                     ImportacionResponseDTO.DetalleItemDTO item = new ImportacionResponseDTO.DetalleItemDTO();
-
-                    // ✅ AHORA ENVIAMOS EL ID AL FRONTEND
                     item.setId(d.getId());
-
                     item.setNombreProducto(d.getProducto().getNombre());
                     item.setCantidad(new BigDecimal(d.getCantidad()));
+
+                    // ✅ AÑADIDO PARA LA VISTA DEL FRONTEND DE RECEPCIÓN
+                    item.setCantidadRecibida(d.getCantidadRecibida());
+
                     item.setPrecioUnitarioFob(d.getPrecioUnitario());
                     item.setImporteFob(d.getImporteTotal());
 
@@ -401,8 +427,6 @@ public class ImportacionServiceImpl implements ImportacionService {
                     item.setItemIgv(orZero(c.getProIgv()).multiply(factor));
                     item.setItemIpm(orZero(c.getProIpm()).multiply(factor));
                     item.setItemPercepcion(orZero(c.getProPercepcion()).multiply(factor));
-
-                    // ✅ LEEMOS EL AD VALOREM REAL DE LA BASE DE DATOS
                     item.setItemAdv(orZero(d.getAdValoremItem()));
 
                     item.setItemOtros1(orZero(c.getProOtros1()).multiply(factor));

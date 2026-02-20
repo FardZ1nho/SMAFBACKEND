@@ -94,11 +94,15 @@ public class ImportacionResponseDTO {
 
     @Data
     public static class DetalleItemDTO {
-        // ✅ NUEVO: ID DEL DETALLE PARA ENVIARLO AL BACKEND
+        // ID DEL DETALLE PARA ENVIARLO AL BACKEND
         private Integer id;
 
         private String nombreProducto;
         private BigDecimal cantidad;
+
+        // ✅ NUEVO: Agregado para que el servicio pueda mapear y guardar la cantidad recibida
+        private Integer cantidadRecibida;
+
         private BigDecimal precioUnitarioFob;
         private BigDecimal importeFob;
 

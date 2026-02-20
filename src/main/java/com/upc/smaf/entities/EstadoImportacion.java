@@ -6,5 +6,6 @@ public enum EstadoImportacion {
     EN_ADUANAS,     // Trámite aduanero
     NACIONALIZADO,  // Impuestos pagados
     EN_ALMACEN,     // Ya ingresó a tu stock
-    CERRADO         // Costos finales cerrados
+    CERRADO ,        // Costos finales cerrados
+    LIQUIDADA
 }

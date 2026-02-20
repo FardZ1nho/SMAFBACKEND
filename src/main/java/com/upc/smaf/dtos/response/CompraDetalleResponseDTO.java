@@ -12,12 +12,15 @@ public class CompraDetalleResponseDTO {
     private String codigoProducto;
 
     private Integer cantidad;
-    private BigDecimal precioUnitario; // FOB Unitario
-    private BigDecimal importe;        // FOB Total
+
+    // ✅ NUEVO: La cantidad validada en almacén
+    private Integer cantidadRecibida;
+
+    private BigDecimal precioUnitario;
+    private BigDecimal importe;
 
     private String nombreAlmacen;
 
-    // ✅ NUEVOS CAMPOS DE RESPUESTA
-    private BigDecimal costoUnitarioLanded; // Costo real unitario
-    private BigDecimal costoTotalLanded;    // Costo real total
+    private BigDecimal costoUnitarioLanded;
+    private BigDecimal costoTotalLanded;
 }

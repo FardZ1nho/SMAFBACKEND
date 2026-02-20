@@ -66,7 +66,7 @@ public class CompraServiceImpl implements CompraService {
         compra.setRetencion(request.getRetencion());
 
         // ====================================================
-        // ✅ 3. LÓGICA DE IMPORTACIÓN (Datos Logísticos)
+        // 3. LÓGICA DE IMPORTACIÓN (Datos Logísticos)
         // ====================================================
         compra.setCodImportacion(request.getCodImportacion());
         compra.setPesoNetoKg(request.getPesoNetoKg() != null ? request.getPesoNetoKg() : BigDecimal.ZERO);
@@ -82,15 +82,11 @@ public class CompraServiceImpl implements CompraService {
                 Importacion nuevaImp = new Importacion();
                 nuevaImp.setCodigoAgrupador(request.getCodImportacion());
                 nuevaImp.setEstado(EstadoImportacion.ORDENADO);
-                // Inicializar valores en CERO
                 nuevaImp.setSumaFobTotal(BigDecimal.ZERO);
                 nuevaImp.setPesoTotalKg(BigDecimal.ZERO);
                 nuevaImp.setCbmTotal(BigDecimal.ZERO);
-
-                // Inicializar costos globales en CERO para evitar nulos
                 nuevaImp.setCostoFlete(BigDecimal.ZERO);
                 nuevaImp.setCostoAlmacenajeCft(BigDecimal.ZERO);
-                // ... (inicializar otros si es necesario, aunque orZero lo maneja)
 
                 Importacion impGuardada = importacionRepository.save(nuevaImp);
                 compra.setImportacion(impGuardada);
@@ -111,13 +107,12 @@ public class CompraServiceImpl implements CompraService {
                     pago.setCuentaOrigen(cuentaRepository.findById(pagoDTO.getCuentaOrigenId()).orElse(null));
                 }
 
-                // Normalizar para saldo (Si pagan en Soles una factura en Dólares)
                 BigDecimal montoNorm = pago.getMonto();
                 if(!pago.getMoneda().equals(compra.getMoneda()) && compra.getTipoCambio() != null) {
                     if ("USD".equals(pago.getMoneda())) {
-                        montoNorm = montoNorm.multiply(compra.getTipoCambio()); // Dólar a Sol (aprox)
+                        montoNorm = montoNorm.multiply(compra.getTipoCambio());
                     } else if ("USD".equals(compra.getMoneda())) {
-                        montoNorm = montoNorm.divide(compra.getTipoCambio(), 2, RoundingMode.HALF_UP); // Sol a Dólar
+                        montoNorm = montoNorm.divide(compra.getTipoCambio(), 2, RoundingMode.HALF_UP);
                     }
                 }
                 totalPagadoNormalizado = totalPagadoNormalizado.add(montoNorm);
@@ -126,7 +121,6 @@ public class CompraServiceImpl implements CompraService {
         }
         compra.setMontoPagadoInicial(totalPagadoNormalizado);
 
-        // Calcular Saldo
         BigDecimal saldo = compra.getTotal().subtract(totalPagadoNormalizado);
         compra.setSaldoPendiente(saldo.max(BigDecimal.ZERO));
         compra.setEstado((saldo.compareTo(BigDecimal.ZERO) <= 0) ? EstadoCompra.COMPLETADA : EstadoCompra.REGISTRADA);
@@ -143,6 +137,7 @@ public class CompraServiceImpl implements CompraService {
                 detalle.setCompra(savedCompra);
                 detalle.setProducto(producto);
                 detalle.setCantidad(detReq.getCantidad());
+                detalle.setCantidadRecibida(0); // Inicializa en 0 para importaciones
                 detalle.setPrecioUnitario(detReq.getPrecioUnitario());
                 detalle.calcularImporte();
 
@@ -150,24 +145,23 @@ public class CompraServiceImpl implements CompraService {
                     detalle.setAlmacen(almacenRepository.findById(detReq.getAlmacenId().longValue()).orElse(null));
                 }
 
-                // Actualizar Stock solo si es Bien
-                if(compra.getTipoCompra() == TipoCompra.BIEN) {
+                // ACTUALIZAR STOCK SOLO SI ES BIEN LOCAL (NO IMPORTACIÓN)
+                if(compra.getTipoCompra() == TipoCompra.BIEN && compra.getTipoComprobante() != TipoComprobante.FACTURA_COMERCIAL) {
                     int stock = producto.getStockActual() != null ? producto.getStockActual() : 0;
                     producto.setStockActual(stock + detReq.getCantidad());
-
-                    // Actualizar referencia de costo
-                    if(savedCompra.getCodImportacion() != null) {
-                        producto.setPrecioChina(detReq.getPrecioUnitario()); // Referencia Importación
-                    } else {
-                        producto.setCostoTotal(detReq.getPrecioUnitario()); // Referencia Local
-                    }
+                    producto.setCostoTotal(detReq.getPrecioUnitario()); // Referencia Local
+                    productoRepository.save(producto);
+                } else if (compra.getTipoComprobante() == TipoComprobante.FACTURA_COMERCIAL) {
+                    // Si es importación, solo actualiza la referencia de costo, NO EL STOCK AÚN
+                    producto.setPrecioChina(detReq.getPrecioUnitario());
                     productoRepository.save(producto);
                 }
+
                 detalleRepository.save(detalle);
             }
         }
 
-        // ✅ 6. ACTUALIZAR TOTALES DE LA CARPETA (FOB, PESO, CBM)
+        // 6. ACTUALIZAR TOTALES DE LA CARPETA
         if (savedCompra.getImportacion() != null) {
             actualizarTotalesImportacion(savedCompra.getImportacion());
         }
@@ -183,7 +177,7 @@ public class CompraServiceImpl implements CompraService {
 
         PagoCompra pago = new PagoCompra();
         pago.setMonto(monto);
-        pago.setMoneda(compra.getMoneda()); // Asumimos misma moneda por ahora
+        pago.setMoneda(compra.getMoneda());
         pago.setMetodoPago(metodo);
         pago.setFechaPago(LocalDateTime.now());
         pago.setReferencia(referencia);
@@ -194,7 +188,6 @@ public class CompraServiceImpl implements CompraService {
 
         compra.agregarPago(pago);
 
-        // Recalcular saldo
         BigDecimal pagado = compra.getPagos().stream()
                 .map(PagoCompra::getMonto)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -217,8 +210,8 @@ public class CompraServiceImpl implements CompraService {
 
         if(compra.getEstado() == EstadoCompra.ANULADA) return;
 
-        // Revertir Stock
-        if (compra.getTipoCompra() == TipoCompra.BIEN) {
+        // Revertir Stock SOLO si no era una importación
+        if (compra.getTipoCompra() == TipoCompra.BIEN && compra.getTipoComprobante() != TipoComprobante.FACTURA_COMERCIAL) {
             for (CompraDetalle d : compra.getDetalles()) {
                 Producto p = d.getProducto();
                 p.setStockActual(Math.max(0, p.getStockActual() - d.getCantidad()));
@@ -229,7 +222,6 @@ public class CompraServiceImpl implements CompraService {
         compra.setEstado(EstadoCompra.ANULADA);
         compraRepository.save(compra);
 
-        // ✅ Al anular, descontar de los totales de importación
         if (compra.getImportacion() != null) {
             actualizarTotalesImportacion(compra.getImportacion());
         }
@@ -251,14 +243,12 @@ public class CompraServiceImpl implements CompraService {
 
     @Override
     public List<CompraResponseDTO> buscarPorNumero(String numero) {
-        // Implementar búsqueda en repositorio si es necesario
-        // Por ahora retornamos vacío o puedes usar un método custom en repo
         return Collections.emptyList();
     }
 
     @Override
     public List<CompraResponseDTO> listarPorProveedor(Integer proveedorId) {
-        return compraRepository.findAll().stream() // Optimizar con findByProveedorId en repo
+        return compraRepository.findAll().stream()
                 .filter(c -> c.getProveedor().getId().equals(proveedorId))
                 .map(this::mapToResponseDTO)
                 .collect(Collectors.toList());
@@ -274,36 +264,29 @@ public class CompraServiceImpl implements CompraService {
     @Override
     @Transactional
     public CompraResponseDTO actualizarCompra(Integer id, CompraRequestDTO request) {
-        // 1. Buscar la compra existente
         Compra compra = compraRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Compra no encontrada ID: " + id));
 
-        // Validar que no esté anulada (opcional)
         if (compra.getEstado() == EstadoCompra.ANULADA) {
             throw new RuntimeException("No se puede editar una compra ANULADA");
         }
 
         // ====================================================
-        // 🔄 2. REVERTIR STOCK ANTERIOR (IMPORTANTE)
+        // 2. REVERTIR STOCK ANTERIOR (SOLO SI ERA LOCAL)
         // ====================================================
-        // Antes de borrar los detalles viejos, restamos el stock que habíamos sumado
-        if (compra.getTipoCompra() == TipoCompra.BIEN) {
+        if (compra.getTipoCompra() == TipoCompra.BIEN && compra.getTipoComprobante() != TipoComprobante.FACTURA_COMERCIAL) {
             for (CompraDetalle detalleViejo : compra.getDetalles()) {
                 Producto p = detalleViejo.getProducto();
                 int stockActual = p.getStockActual() != null ? p.getStockActual() : 0;
-                // Restamos la cantidad vieja
                 p.setStockActual(Math.max(0, stockActual - detalleViejo.getCantidad()));
                 productoRepository.save(p);
             }
         }
 
-        // 3. Limpiar detalles anteriores (JPA se encarga de borrarlos si tienes orphanRemoval=true, sino usamos repo)
         detalleRepository.deleteAll(compra.getDetalles());
         compra.getDetalles().clear();
 
-        // ====================================================
         // 4. ACTUALIZAR DATOS DE CABECERA
-        // ====================================================
         Proveedor proveedor = proveedorRepository.findById(request.getProveedorId())
                 .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
 
@@ -318,40 +301,34 @@ public class CompraServiceImpl implements CompraService {
         compra.setTipoCambio(request.getTipoCambio());
         compra.setObservaciones(request.getObservaciones());
 
-        // Actualizar Totales
         compra.setSubTotal(request.getSubTotal());
         compra.setFob(request.getFob() != null ? request.getFob() : BigDecimal.ZERO);
         compra.setIgv(request.getIgv());
         compra.setTotal(request.getTotal());
 
-        // Actualizar Impuestos
         compra.setPercepcion(request.getPercepcion() != null ? request.getPercepcion() : BigDecimal.ZERO);
         compra.setRetencion(request.getRetencion());
 
-        // Actualizar Datos Logísticos
-        String codImportacionAnterior = compra.getCodImportacion(); // Guardamos referencia por si cambió
+        String codImportacionAnterior = compra.getCodImportacion();
         compra.setCodImportacion(request.getCodImportacion());
         compra.setPesoNetoKg(request.getPesoNetoKg());
         compra.setCbm(request.getCbm());
 
-        // Manejo de Carpeta de Importación (Si cambió el código)
         if (request.getCodImportacion() != null && !request.getCodImportacion().equals(codImportacionAnterior)) {
             Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(request.getCodImportacion());
             if (importacionOpt.isPresent()) {
                 compra.setImportacion(importacionOpt.get());
             } else {
-                // Crear nueva carpeta si no existe (lógica resumida igual que en crear)
                 Importacion nuevaImp = new Importacion();
                 nuevaImp.setCodigoAgrupador(request.getCodImportacion());
                 nuevaImp.setEstado(EstadoImportacion.ORDENADO);
                 nuevaImp.setSumaFobTotal(BigDecimal.ZERO);
-                // ... setear otros en cero ...
                 compra.setImportacion(importacionRepository.save(nuevaImp));
             }
         }
 
         // ====================================================
-        // 🆕 5. INSERTAR NUEVOS DETALLES Y SUMAR NUEVO STOCK
+        // 5. INSERTAR NUEVOS DETALLES Y SUMAR NUEVO STOCK
         // ====================================================
         if (request.getDetalles() != null) {
             for (CompraRequestDTO.DetalleRequestDTO detReq : request.getDetalles()) {
@@ -362,6 +339,7 @@ public class CompraServiceImpl implements CompraService {
                 detalle.setCompra(compra);
                 detalle.setProducto(producto);
                 detalle.setCantidad(detReq.getCantidad());
+                detalle.setCantidadRecibida(0);
                 detalle.setPrecioUnitario(detReq.getPrecioUnitario());
                 detalle.calcularImporte();
 
@@ -369,27 +347,22 @@ public class CompraServiceImpl implements CompraService {
                     detalle.setAlmacen(almacenRepository.findById(detReq.getAlmacenId().longValue()).orElse(null));
                 }
 
-                // SUMAR NUEVO STOCK
-                if (compra.getTipoCompra() == TipoCompra.BIEN) {
+                // SUMAR NUEVO STOCK SOLO SI ES LOCAL
+                if (compra.getTipoCompra() == TipoCompra.BIEN && compra.getTipoComprobante() != TipoComprobante.FACTURA_COMERCIAL) {
                     int stock = producto.getStockActual() != null ? producto.getStockActual() : 0;
                     producto.setStockActual(stock + detReq.getCantidad());
-
-                    // Actualizar precio referencia
-                    if (compra.getCodImportacion() != null) {
-                        producto.setPrecioChina(detReq.getPrecioUnitario());
-                    } else {
-                        producto.setCostoTotal(detReq.getPrecioUnitario());
-                    }
+                    producto.setCostoTotal(detReq.getPrecioUnitario());
+                    productoRepository.save(producto);
+                } else if (compra.getTipoComprobante() == TipoComprobante.FACTURA_COMERCIAL) {
+                    producto.setPrecioChina(detReq.getPrecioUnitario());
                     productoRepository.save(producto);
                 }
 
-                // Agregar a la lista de la entidad (si usas CascadeType.ALL) o guardar directo
                 detalleRepository.save(detalle);
             }
         }
 
-        // Recalcular estado de pago (Saldo)
-        BigDecimal totalPagado = compra.getMontoPagadoInicial(); // O recalcular desde tabla pagos
+        BigDecimal totalPagado = compra.getMontoPagadoInicial();
         if(compra.getPagos() != null) {
             totalPagado = compra.getPagos().stream().map(PagoCompra::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
         }
@@ -399,11 +372,9 @@ public class CompraServiceImpl implements CompraService {
 
         Compra compraGuardada = compraRepository.save(compra);
 
-        // 6. ACTUALIZAR TOTALES DE IMPORTACIÓN (Vieja y Nueva)
         if (compraGuardada.getImportacion() != null) {
             actualizarTotalesImportacion(compraGuardada.getImportacion());
         }
-        // Si cambió de importación, actualizar también la anterior (si existe)
         if (codImportacionAnterior != null && !codImportacionAnterior.equals(request.getCodImportacion())) {
             importacionRepository.findByCodigoAgrupador(codImportacionAnterior)
                     .ifPresent(this::actualizarTotalesImportacion);
@@ -411,10 +382,6 @@ public class CompraServiceImpl implements CompraService {
 
         return obtenerCompra(compraGuardada.getId());
     }
-
-    // =========================================================
-    // ✅ MÉTODOS AUXILIARES
-    // =========================================================
 
     private void actualizarTotalesImportacion(Importacion imp) {
         BigDecimal sumaFob = BigDecimal.ZERO;
@@ -437,14 +404,15 @@ public class CompraServiceImpl implements CompraService {
         importacionRepository.save(imp);
     }
 
-// ... imports necesarios ...
-    // import com.upc.smaf.dtos.response.CompraDetalleResponseDTO;
-
     private CompraResponseDTO mapToResponseDTO(Compra c) {
         CompraResponseDTO dto = new CompraResponseDTO();
         dto.setId(c.getId());
         dto.setSerie(c.getSerie());
         dto.setNumero(c.getNumero());
+
+        // ✅ CORRECCIÓN CLAVE: Enviar el tipo de comprobante al Frontend
+        dto.setTipoComprobante(c.getTipoComprobante() != null ? c.getTipoComprobante().name() : "FACTURA_ELECTRONICA");
+
         dto.setTipoCompra(c.getTipoCompra() != null ? c.getTipoCompra().name() : "BIEN");
         dto.setTipoPago(c.getTipoPago() != null ? c.getTipoPago().name() : "CONTADO");
         dto.setFechaEmision(c.getFechaEmision());
@@ -463,12 +431,10 @@ public class CompraServiceImpl implements CompraService {
         dto.setTotal(c.getTotal());
         dto.setSaldoPendiente(c.getSaldoPendiente());
 
-        // Datos Importación
         dto.setCodImportacion(c.getCodImportacion());
         dto.setPesoNetoKg(orZero(c.getPesoNetoKg()));
         dto.setCbm(orZero(c.getCbm()));
 
-        // Resultados Prorrateo
         dto.setProFlete(orZero(c.getProFlete()));
         dto.setProAlmacenaje(orZero(c.getProAlmacenaje()));
         dto.setProTransporte(orZero(c.getProTransporte()));
@@ -478,15 +444,12 @@ public class CompraServiceImpl implements CompraService {
         dto.setProSeguroResguardo(orZero(c.getProSeguroResguardo()));
         dto.setProImpuestos(orZero(c.getProImpuestos()));
         dto.setProOtrosGastos(orZero(c.getProOtrosGastos()));
-
         dto.setCostoTotalImportacion(orZero(c.getCostoTotalImportacion()));
 
-        // ✅ MAPEO USANDO TU DTO EXISTENTE (CompraDetalleResponseDTO)
         if (c.getDetalles() != null && !c.getDetalles().isEmpty()) {
             List<CompraDetalleResponseDTO> detallesDto = c.getDetalles().stream().map(d -> {
                 CompraDetalleResponseDTO item = new CompraDetalleResponseDTO();
-
-                item.setId(d.getId()); // ID del detalle
+                item.setId(d.getId());
 
                 if (d.getProducto() != null) {
                     item.setProductoId(d.getProducto().getId());
@@ -497,9 +460,9 @@ public class CompraServiceImpl implements CompraService {
                 }
 
                 item.setCantidad(d.getCantidad());
+                item.setCantidadRecibida(d.getCantidadRecibida() != null ? d.getCantidadRecibida() : 0);
                 item.setPrecioUnitario(d.getPrecioUnitario());
 
-                // Importe (Total FOB)
                 if (d.getImporteTotal() != null) {
                     item.setImporte(d.getImporteTotal());
                 } else {
@@ -507,12 +470,10 @@ public class CompraServiceImpl implements CompraService {
                     item.setImporte(d.getPrecioUnitario().multiply(cant));
                 }
 
-                // Almacén
                 if (d.getAlmacen() != null) {
                     item.setNombreAlmacen(d.getAlmacen().getNombre());
                 }
 
-                // Costos Landed (Si ya se calcularon)
                 item.setCostoUnitarioLanded(d.getCostoUnitarioLanded());
                 item.setCostoTotalLanded(d.getCostoTotalLanded());
 

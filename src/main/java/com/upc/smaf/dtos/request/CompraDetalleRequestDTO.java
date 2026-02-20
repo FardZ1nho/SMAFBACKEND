@@ -6,9 +6,7 @@ import java.math.BigDecimal;
 @Data
 public class CompraDetalleRequestDTO {
     private Integer productoId;
-    private Integer almacenId; // Donde ingresará físicamente la mercadería
+    private Integer almacenId;
     private Integer cantidad;
-
-    // ✅ Se recomienda usar BigDecimal siempre para dinero
     private BigDecimal precioUnitario;
 }

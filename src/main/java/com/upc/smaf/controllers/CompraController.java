@@ -32,6 +32,17 @@ public class CompraController {
         }
     }
 
+    // ✅ SOLUCIÓN AL ERROR 401: Faltaba este endpoint para actualizar la compra
+    @PutMapping("/{id}")
+    public ResponseEntity<?> actualizarCompra(@PathVariable Integer id, @Valid @RequestBody CompraRequestDTO request) {
+        try {
+            return ResponseEntity.ok(compraService.actualizarCompra(id, request));
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
     @PostMapping("/{id}/pagos")
     public ResponseEntity<?> registrarPago(
             @PathVariable Integer id,
@@ -75,7 +86,6 @@ public class CompraController {
         return ResponseEntity.ok(compraService.listarPorCodigoImportacion(codImportacion));
     }
 
-    // ✅ AGREGADO: ANULAR COMPRA (Importante para revertir cálculos de importación)
     @DeleteMapping("/{id}")
     public ResponseEntity<?> anularCompra(@PathVariable Integer id) {
         try {

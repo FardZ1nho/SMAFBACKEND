@@ -1,6 +1,7 @@
 package com.upc.smaf.controllers;
 
 import com.upc.smaf.dtos.request.ImportacionRequestDTO;
+import com.upc.smaf.dtos.request.RecepcionItemDTO; // ✅ IMPORTACIÓN OBLIGATORIA
 import com.upc.smaf.dtos.response.ImportacionResponseDTO;
 import com.upc.smaf.entities.EstadoImportacion;
 import com.upc.smaf.serviceinterface.ImportacionService;
@@ -62,5 +63,20 @@ public class ImportacionController {
     public ResponseEntity<Void> recalcularCostos(@PathVariable Integer id) {
         importacionService.recalcularCostos(id);
         return ResponseEntity.ok().build();
+    }
+
+    // =========================================================
+    // 🚀 ESTE ES EL MÉTODO QUE FALTABA PARA LA RECEPCIÓN EN KARDEX
+    // =========================================================
+    @PostMapping("/{id}/recepcion")
+    public ResponseEntity<?> confirmarRecepcion(
+            @PathVariable Integer id,
+            @RequestBody List<RecepcionItemDTO> items) {
+        try {
+            importacionService.confirmarRecepcion(id, items);
+            return ResponseEntity.ok(Map.of("message", "Recepción confirmada y stock actualizado exitosamente"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
     }
 }
