@@ -1,10 +1,13 @@
 package com.upc.smaf.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "clientes")
@@ -19,18 +22,17 @@ public class Cliente {
     private Integer id;
 
     @Column(name = "tipo_cliente", length = 20, nullable = false)
-    private String tipoCliente; // PERSONA, EMPRESA
+    private String tipoCliente; // PERSONA, EMPRESA, PROSPECTO (Agrega este en tu frontend)
 
     @Column(name = "nombre_completo", nullable = false, length = 200)
     private String nombreCompleto;
 
     @Column(name = "tipo_documento", length = 20)
-    private String tipoDocumento; // DNI, RUC, PASAPORTE, CARNET_EXTRANJERIA
+    private String tipoDocumento;
 
     @Column(name = "numero_documento", unique = true, length = 20)
     private String numeroDocumento;
 
-    // ⭐⭐⭐ AGREGAR ESTOS DOS CAMPOS ⭐⭐⭐
     @Column(name = "dni", nullable = false, length = 8)
     private String dni;
 
@@ -40,14 +42,12 @@ public class Cliente {
     @Column(name = "nombre", nullable = false, length = 200)
     private String nombre;
 
-    // Contacto
     @Column(name = "telefono", length = 20)
     private String telefono;
 
     @Column(name = "email", length = 100)
     private String email;
 
-    // Dirección
     @Column(name = "direccion", columnDefinition = "TEXT")
     private String direccion;
 
@@ -60,14 +60,12 @@ public class Cliente {
     @Column(name = "departamento", length = 100)
     private String departamento;
 
-    // Para empresas
     @Column(name = "razon_social", length = 200)
     private String razonSocial;
 
     @Column(name = "nombre_contacto", length = 200)
     private String nombreContacto;
 
-    // Información adicional
     @Column(name = "notas", columnDefinition = "TEXT")
     private String notas;
 
@@ -79,6 +77,19 @@ public class Cliente {
 
     @Column(name = "fecha_actualizacion")
     private LocalDateTime fechaActualizacion = LocalDateTime.now();
+
+    // ⭐⭐⭐ NUEVOS CAMPOS PARA EL CRM ⭐⭐⭐
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origen_contacto")
+    private OrigenContacto origen;
+
+    @Column(name = "notas_crm", columnDefinition = "TEXT")
+    private String notasCrm;
+
+    @OneToMany(mappedBy = "cliente", cascade = CascadeType.ALL)
+    @JsonIgnore // Evita bucles infinitos al traer el cliente
+    private List<Tarea> tareasSeguimiento = new ArrayList<>();
 
     @PreUpdate
     protected void onUpdate() {

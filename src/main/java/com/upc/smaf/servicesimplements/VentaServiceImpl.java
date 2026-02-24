@@ -36,7 +36,6 @@ public class VentaServiceImpl implements VentaService {
     @Override
     @Transactional
     public VentaResponseDTO crearVenta(VentaRequestDTO request) {
-        // Validaciones iniciales
         if (request.getDetalles() == null || request.getDetalles().isEmpty()) {
             throw new RuntimeException("Debe agregar al menos un producto a la venta");
         }
@@ -47,26 +46,20 @@ public class VentaServiceImpl implements VentaService {
         venta.setNombreCliente(request.getNombreCliente());
         venta.setTipoCliente(request.getTipoCliente());
         venta.setNotas(request.getNotas());
-
         venta.setMoneda(request.getMoneda());
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
         venta.setNumeroCuotas(request.getNumeroCuotas());
-
         venta.setTipoDocumento(request.getTipoDocumento());
         venta.setNumeroDocumento(request.getNumeroDocumento());
 
-        // --- PROCESAR PRODUCTOS ---
         BigDecimal subtotalAcumulado = BigDecimal.ZERO;
 
         for (DetalleVentaRequestDTO detalleDTO : request.getDetalles()) {
             Producto producto = productoRepository.findById(detalleDTO.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detalleDTO.getProductoId()));
 
-            // ✅ CORRECCIÓN 1: VALIDAR STOCK SOLO SI NO ES SERVICIO
             if (producto.getTipo() != TipoProducto.SERVICIO) {
-                // Si es un KIT, la lógica de stock es más compleja (stock virtual),
-                // pero si es PRODUCTO simple, validamos aquí:
                 if (producto.getTipo() == TipoProducto.PRODUCTO && producto.getStockActual() < detalleDTO.getCantidad()) {
                     throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
                 }
@@ -82,18 +75,12 @@ public class VentaServiceImpl implements VentaService {
             subtotalAcumulado = subtotalAcumulado.add(detalle.getSubtotal());
             venta.agregarDetalle(detalle);
 
-            // ✅ CORRECCIÓN 2: DESCONTAR STOCK SOLO SI NO ES SERVICIO
-            if (producto.getTipo() != TipoProducto.SERVICIO) {
-                // Si es KIT, no se descuenta directamente aquí (se debería usar reducirStock recursivo),
-                // pero si es PRODUCTO simple:
-                if (producto.getTipo() == TipoProducto.PRODUCTO) {
-                    producto.setStockActual(producto.getStockActual() - detalleDTO.getCantidad());
-                    productoRepository.save(producto);
-                }
+            if (producto.getTipo() != TipoProducto.SERVICIO && producto.getTipo() == TipoProducto.PRODUCTO) {
+                producto.setStockActual(producto.getStockActual() - detalleDTO.getCantidad());
+                productoRepository.save(producto);
             }
         }
 
-        // --- TOTALES ---
         BigDecimal totalVenta = subtotalAcumulado;
         BigDecimal subtotalBase = totalVenta.divide(new BigDecimal("1.18"), 2, RoundingMode.HALF_UP);
         BigDecimal igv = totalVenta.subtract(subtotalBase);
@@ -102,7 +89,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setIgv(igv);
         venta.setTotal(totalVenta);
 
-        // --- PROCESAR PAGOS ---
         BigDecimal totalPagadoNormalizado = BigDecimal.ZERO;
 
         if (request.getPagos() != null && !request.getPagos().isEmpty()) {
@@ -124,17 +110,14 @@ public class VentaServiceImpl implements VentaService {
                         venta.getMoneda(), venta.getTipoCambio()
                 );
                 totalPagadoNormalizado = totalPagadoNormalizado.add(montoEnMonedaVenta);
-
                 venta.agregarPago(pago);
             }
         }
 
-        // --- ESTADO Y SALDO ---
         venta.setMontoInicial(totalPagadoNormalizado);
 
         if (venta.getTipoPago() == TipoPago.CONTADO) {
             BigDecimal diferencia = totalVenta.subtract(totalPagadoNormalizado);
-            // Tolerancia de 0.10 céntimos por redondeo
             if (diferencia.compareTo(new BigDecimal("0.10")) > 0) {
                 throw new RuntimeException("Pago incompleto para venta al CONTADO.");
             }
@@ -166,9 +149,7 @@ public class VentaServiceImpl implements VentaService {
     @Override
     @Transactional
     public VentaResponseDTO registrarAmortizacion(Integer ventaId, BigDecimal monto, MetodoPago metodo, Integer cuentaId) {
-        Venta venta = ventaRepository.findById(ventaId)
-                .orElseThrow(() -> new RuntimeException("Venta no encontrada"));
-
+        Venta venta = ventaRepository.findById(ventaId).orElseThrow(() -> new RuntimeException("Venta no encontrada"));
         if (venta.getEstado() == EstadoVenta.CANCELADA) throw new RuntimeException("Venta cancelada");
         if (venta.getSaldoPendiente().compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Venta ya pagada");
 
@@ -184,8 +165,8 @@ public class VentaServiceImpl implements VentaService {
         }
 
         venta.agregarPago(pago);
-
         venta.setSaldoPendiente(venta.getSaldoPendiente().subtract(monto));
+
         if (venta.getSaldoPendiente().compareTo(BigDecimal.ZERO) <= 0) {
             venta.setEstado(EstadoVenta.COMPLETADA);
         }
@@ -209,7 +190,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
-        // Productos (Sin descontar stock)
         if (request.getDetalles() != null) {
             for (DetalleVentaRequestDTO det : request.getDetalles()) {
                 productoRepository.findById(det.getProductoId()).ifPresent(p -> {
@@ -229,7 +209,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setSubtotal(total.divide(new BigDecimal("1.18"), 2, RoundingMode.HALF_UP));
         venta.setIgv(total.subtract(venta.getSubtotal()));
 
-        // Pagos en Borrador
         if (request.getPagos() != null) {
             for (VentaRequestDTO.PagoRequestDTO pagoDTO : request.getPagos()) {
                 Pago pago = new Pago();
@@ -243,32 +222,55 @@ public class VentaServiceImpl implements VentaService {
                 venta.agregarPago(pago);
             }
         }
-
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
 
     // ==========================================
-    // 4. ACTUALIZAR VENTA
+    // 4. ACTUALIZAR VENTA (SIN RESTRICCIONES DE ESTADO)
     // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO actualizarVenta(Integer id, VentaRequestDTO request) {
         Venta venta = ventaRepository.findById(id).orElseThrow(() -> new RuntimeException("Venta no encontrada"));
-        if (venta.getEstado() == EstadoVenta.COMPLETADA) throw new RuntimeException("No se editan ventas completadas");
 
+        // 1. DEVOLVER EL STOCK DE LOS PRODUCTOS ANTERIORES
+        // ✅ CORRECCIÓN: Solo devolvemos stock si la venta original era COMPLETADA o PENDIENTE (los borradores no descuentan)
+        if (venta.getEstado() == EstadoVenta.COMPLETADA || venta.getEstado() == EstadoVenta.PENDIENTE) {
+            for (DetalleVenta det : venta.getDetalles()) {
+                Producto p = det.getProducto();
+                if (p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
+                    p.setStockActual(p.getStockActual() + det.getCantidad());
+                    productoRepository.save(p);
+                }
+            }
+        }
+
+        // 2. LIMPIAR DETALLES Y PAGOS ANTIGUOS
         venta.getDetalles().clear();
         venta.getPagos().clear();
 
+        // 3. ACTUALIZAR DATOS BASE
         venta.setNombreCliente(request.getNombreCliente());
+        venta.setTipoCliente(request.getTipoCliente());
         venta.setNotas(request.getNotas());
+        venta.setMoneda(request.getMoneda());
+        venta.setTipoCambio(request.getTipoCambio());
+        venta.setTipoPago(request.getTipoPago());
 
-        // Re-agregar productos
-        BigDecimal subtotal = BigDecimal.ZERO;
+        // 4. AGREGAR NUEVOS DETALLES Y DESCONTAR NUEVO STOCK
+        BigDecimal subtotalAcumulado = BigDecimal.ZERO;
+
         for (DetalleVentaRequestDTO detDTO : request.getDetalles()) {
             Producto p = productoRepository.findById(detDTO.getProductoId()).orElseThrow();
 
-            // ✅ También podrías querer validar stock aquí si al editar pasas a estado completado,
-            // pero por simplicidad mantenemos tu lógica original de solo agregar.
+            // Validar y descontar stock si la nueva versión NO es un borrador
+            if (venta.getEstado() != EstadoVenta.BORRADOR && p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
+                if (p.getStockActual() < detDTO.getCantidad()) {
+                    throw new RuntimeException("Stock insuficiente para: " + p.getNombre());
+                }
+                p.setStockActual(p.getStockActual() - detDTO.getCantidad());
+                productoRepository.save(p);
+            }
 
             DetalleVenta det = new DetalleVenta();
             det.setProducto(p);
@@ -276,15 +278,18 @@ public class VentaServiceImpl implements VentaService {
             det.setPrecioUnitario(detDTO.getPrecioUnitario());
             det.setDescuento(detDTO.getDescuento() != null ? detDTO.getDescuento() : BigDecimal.ZERO);
             det.calcularSubtotal();
+
             venta.agregarDetalle(det);
-            subtotal = subtotal.add(det.getSubtotal());
+            subtotalAcumulado = subtotalAcumulado.add(det.getSubtotal());
         }
 
-        venta.setTotal(subtotal);
-        venta.setSubtotal(subtotal.divide(new BigDecimal("1.18"), 2, RoundingMode.HALF_UP));
-        venta.setIgv(subtotal.subtract(venta.getSubtotal()));
+        BigDecimal totalVenta = subtotalAcumulado;
+        BigDecimal subtotalBase = totalVenta.divide(new BigDecimal("1.18"), 2, RoundingMode.HALF_UP);
+        venta.setTotal(totalVenta);
+        venta.setSubtotal(subtotalBase);
+        venta.setIgv(totalVenta.subtract(subtotalBase));
 
-        // Re-agregar Pagos
+        // 5. RE-AGREGAR PAGOS
         BigDecimal totalPagado = BigDecimal.ZERO;
         if (request.getPagos() != null) {
             for (VentaRequestDTO.PagoRequestDTO pDTO : request.getPagos()) {
@@ -300,7 +305,20 @@ public class VentaServiceImpl implements VentaService {
                 venta.agregarPago(pago);
             }
         }
+
         venta.setMontoInicial(totalPagado);
+
+        // Recalcular saldo si no es borrador
+        if (venta.getEstado() != EstadoVenta.BORRADOR) {
+            BigDecimal saldo = totalVenta.subtract(totalPagado);
+            if (saldo.compareTo(new BigDecimal("0.10")) <= 0) { // Tolerancia de céntimos
+                venta.setSaldoPendiente(BigDecimal.ZERO);
+                venta.setEstado(EstadoVenta.COMPLETADA);
+            } else {
+                venta.setSaldoPendiente(saldo);
+                venta.setEstado(EstadoVenta.PENDIENTE);
+            }
+        }
 
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
@@ -340,8 +358,7 @@ public class VentaServiceImpl implements VentaService {
         Venta venta = ventaRepository.findById(id).orElseThrow();
         for(DetalleVenta det : venta.getDetalles()) {
             Producto p = det.getProducto();
-            // ✅ SOLO DEVOLVER STOCK SI NO ES SERVICIO
-            if(p.getTipo() != TipoProducto.SERVICIO) {
+            if(p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
                 p.setStockActual(p.getStockActual() + det.getCantidad());
                 productoRepository.save(p);
             }
@@ -372,6 +389,8 @@ public class VentaServiceImpl implements VentaService {
 
     private String generarCodigoVenta() { return "VTA-" + System.currentTimeMillis(); }
 
+    // ✅ MODIFICADO: Ahora extrae TODO para que Angular pueda armar el formulario de edición
+    // ✅ MODIFICADO: Extrae TODO lo necesario, pero SIN el cuentaBancariaId
     private VentaResponseDTO convertirAResponseDTO(Venta venta) {
         VentaResponseDTO dto = new VentaResponseDTO();
         dto.setId(venta.getId());
@@ -384,19 +403,26 @@ public class VentaServiceImpl implements VentaService {
 
         dto.setMoneda(venta.getMoneda());
         dto.setTotal(venta.getTotal());
+        dto.setSubtotal(venta.getSubtotal());
+        dto.setIgv(venta.getIgv());
         dto.setSaldoPendiente(venta.getSaldoPendiente());
         dto.setNotas(venta.getNotas());
 
-        // Detalles
+        // Detalles: ENVÍA IDs, PRECIOS Y DESCUENTOS PARA EL FRONTEND
         List<DetalleVentaResponseDTO> detDTOs = venta.getDetalles().stream().map(d -> {
             DetalleVentaResponseDTO dd = new DetalleVentaResponseDTO();
+            dd.setId(d.getId());
+            dd.setProductoId(d.getProducto().getId());
             dd.setProductoNombre(d.getProducto().getNombre());
             dd.setCantidad(d.getCantidad());
+            dd.setPrecioUnitario(d.getPrecioUnitario());
+            dd.setDescuento(d.getDescuento());
             dd.setSubtotal(d.getSubtotal());
             return dd;
         }).collect(Collectors.toList());
         dto.setDetalles(detDTOs);
 
+        // Pagos: SOLO ENVÍA EL NOMBRE, YA NO PIDE EL ID
         if (venta.getPagos() != null) {
             List<VentaResponseDTO.PagoResponseDTO> pagosDTO = venta.getPagos().stream().map(p -> {
                 VentaResponseDTO.PagoResponseDTO pp = new VentaResponseDTO.PagoResponseDTO();
@@ -406,6 +432,8 @@ public class VentaServiceImpl implements VentaService {
                 pp.setMetodoPago(p.getMetodoPago());
                 pp.setFechaPago(p.getFechaPago().toString());
                 pp.setReferencia(p.getReferencia());
+
+                // ✅ Solo mandamos el texto, eliminamos el setCuentaBancariaId
                 if (p.getCuentaDestino() != null) {
                     pp.setNombreCuentaDestino(p.getCuentaDestino().getTitular() + " - " + p.getCuentaDestino().getBanco());
                 }

@@ -1,5 +1,6 @@
 package com.upc.smaf.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -34,7 +35,6 @@ public class Tarea {
     @Column(nullable = false)
     private EstadoTarea estado;
 
-    // ✅ CORREGIDO: Relación con 'Users' en lugar de 'Usuario'
     @ManyToOne
     @JoinColumn(name = "usuario_asignado_id", nullable = false)
     private Users usuarioAsignado;
@@ -45,6 +45,22 @@ public class Tarea {
 
     @Column(name = "fecha_creacion")
     private LocalDateTime fechaCreacion;
+
+    // ⭐⭐⭐ NUEVOS CAMPOS PARA EL CRM ⭐⭐⭐
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cliente_id")
+    @JsonIgnore // Evita problemas de serialización al listar tareas
+    private Cliente cliente;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cotizacion_id")
+    @JsonIgnore
+    private Cotizacion cotizacion;
+
+    // Ej: "LLAMADA", "WHATSAPP", "CORREO"
+    @Column(name = "tipo_accion", length = 50)
+    private String tipoAccion;
 
     @PrePersist
     void prePersist() {

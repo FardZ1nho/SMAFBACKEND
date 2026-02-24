@@ -2,7 +2,7 @@ package com.upc.smaf.entities;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
-import lombok.Data; // 👈 Esto genera los getters automáticos
+import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -18,7 +18,6 @@ public class Cotizacion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    // ✅ ESTOS CAMPOS FALTABAN, POR ESO LOS ERRORES EN ROJO
     private String serie;
     private String numero;
 
@@ -46,7 +45,21 @@ public class Cotizacion {
     @JsonManagedReference
     private List<CotizacionDetalle> detalles = new ArrayList<>();
 
+    // ⭐⭐⭐ NUEVOS CAMPOS PARA EL CRM ⭐⭐⭐
+
+    @Column(name = "motivo_perdida", length = 255)
+    private String motivoPerdida;
+
+    @Column(name = "margen_ganancia_estimado", precision = 10, scale = 2)
+    private BigDecimal margenGananciaEstimado;
+
+    // ✅ ACTUALIZADO: Ahora funciona como el Pipeline de Ventas (Embudo)
     public enum EstadoCotizacion {
-        BORRADOR, ENVIADA, APROBADA, RECHAZADA, VENCIDA
+        CONTACTO_INICIAL,
+        COTIZACION_ENVIADA,
+        EN_NEGOCIACION,
+        GANADA,
+        PERDIDA,
+        VENCIDA
     }
 }
