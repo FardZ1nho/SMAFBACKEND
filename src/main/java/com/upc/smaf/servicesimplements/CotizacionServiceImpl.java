@@ -136,6 +136,11 @@ public class CotizacionServiceImpl {
         return cotizacionRepository.findAll();
     }
 
+    public Cotizacion obtenerPorId(Integer id) {
+        return cotizacionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Cotización no encontrada con ID: " + id));
+    }
+
     // ==========================================
     // UTILIDADES
     // ==========================================

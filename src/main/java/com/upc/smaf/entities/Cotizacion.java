@@ -41,7 +41,8 @@ public class Cotizacion {
     @Enumerated(EnumType.STRING)
     private EstadoCotizacion estado;
 
-    @OneToMany(mappedBy = "cotizacion", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    // ⭐ AQUÍ ESTÁ LA CORRECCIÓN CLAVE: fetch = FetchType.EAGER ⭐
+    @OneToMany(mappedBy = "cotizacion", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @JsonManagedReference
     private List<CotizacionDetalle> detalles = new ArrayList<>();
 

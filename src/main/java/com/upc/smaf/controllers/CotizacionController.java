@@ -59,4 +59,10 @@ public class CotizacionController {
         Cotizacion cotizacionActualizada = cotizacionService.actualizarEstadoPipeline(id, estado, motivoPerdida);
         return ResponseEntity.ok(cotizacionActualizada);
     }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Cotizacion> obtenerPorId(@PathVariable Integer id) {
+        Cotizacion cotizacion = cotizacionService.obtenerPorId(id);
+        return ResponseEntity.ok(cotizacion);
+    }
 }
