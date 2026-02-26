@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod; // 🟢 NUEVO: Importación necesaria
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
@@ -61,10 +62,9 @@ public class WebSecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // ⭐ CAMBIO CLAVE: Usar setAllowedOriginPatterns en lugar de setAllowedOrigins
         configuration.setAllowedOriginPatterns(Arrays.asList(
                 "http://localhost:4200",
-                "https://*.vercel.app"  // ⭐ Ahora SÍ funciona el wildcard
+                "https://*.vercel.app"
         ));
 
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
@@ -83,16 +83,22 @@ public class WebSecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(req -> req
+
+                        // 🟢 SOLUCIÓN: Dejar pasar TODAS las peticiones OPTIONS (Preflight de navegadores)
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                         .requestMatchers("/login").permitAll()
                         .requestMatchers("/productos/**").permitAll()
                         .requestMatchers("/categorias/**").permitAll()
                         .requestMatchers("/dashboard/**").permitAll()
                         .requestMatchers("/clientes/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()
-
-                        // ✅ SOLUCIÓN: Agregadas rutas de compras e importaciones
                         .requestMatchers("/compras/**").permitAll()
                         .requestMatchers("/importaciones/**").permitAll()
+
+                        // Si quieres que las tareas sean públicas sin requerir token en absoluto,
+                        // descomenta la siguiente línea. Si prefieres que SÍ requieran estar logueado, déjalo así.
+                        // .requestMatchers("/tareascrm/**").permitAll()
 
                         .anyRequest().authenticated()
                 )
