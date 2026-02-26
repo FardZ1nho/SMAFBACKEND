@@ -483,6 +483,25 @@ public class CompraServiceImpl implements CompraService {
             dto.setDetalles(detallesDto);
         }
 
+        // 🟢 ¡CORRECCIÓN AQUÍ!: Pasamos la fecha directamente sin convertirla a String
+        if (c.getPagos() != null && !c.getPagos().isEmpty()) {
+            List<PagoCompraResponseDTO> pagosDto = c.getPagos().stream().map(p -> {
+                PagoCompraResponseDTO pago = new PagoCompraResponseDTO();
+                pago.setId(p.getId());
+                pago.setMonto(p.getMonto());
+                pago.setMoneda(p.getMoneda());
+                pago.setMetodoPago(p.getMetodoPago() != null ? p.getMetodoPago().name() : null);
+
+                // Pasamos el LocalDateTime directo
+                pago.setFechaPago(p.getFechaPago());
+
+                pago.setReferencia(p.getReferencia());
+                return pago;
+            }).collect(Collectors.toList());
+
+            dto.setPagos(pagosDto);
+        }
+
         return dto;
     }
 

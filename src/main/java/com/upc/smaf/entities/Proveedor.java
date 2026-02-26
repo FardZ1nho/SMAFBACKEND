@@ -25,8 +25,8 @@ public class Proveedor {
     @Column(nullable = false, length = 200)
     private String nombre;
 
-    // Aumentamos a 20 para cubrir los 18 de China y posibles nuevos formatos
-    @Column(length = 20, unique = true)
+    // ✅ Aumentamos a 100 para evitar el error de "valor demasiado largo" con IDs internacionales largos
+    @Column(length = 100, unique = true)
     private String ruc;
 
     // Agregamos el país para lógica de negocio (PERÚ, CHINA, etc.)

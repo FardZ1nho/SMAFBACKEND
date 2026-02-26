@@ -59,10 +59,9 @@ public class VentaServiceImpl implements VentaService {
             Producto producto = productoRepository.findById(detalleDTO.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detalleDTO.getProductoId()));
 
+            // ⭐ NUEVO: Usamos el helper inteligente para restar stock (General + Almacén)
             if (producto.getTipo() != TipoProducto.SERVICIO) {
-                if (producto.getTipo() == TipoProducto.PRODUCTO && producto.getStockActual() < detalleDTO.getCantidad()) {
-                    throw new RuntimeException("Stock insuficiente para: " + producto.getNombre());
-                }
+                restarStock(producto, detalleDTO.getCantidad());
             }
 
             DetalleVenta detalle = new DetalleVenta();
@@ -75,8 +74,7 @@ public class VentaServiceImpl implements VentaService {
             subtotalAcumulado = subtotalAcumulado.add(detalle.getSubtotal());
             venta.agregarDetalle(detalle);
 
-            if (producto.getTipo() != TipoProducto.SERVICIO && producto.getTipo() == TipoProducto.PRODUCTO) {
-                producto.setStockActual(producto.getStockActual() - detalleDTO.getCantidad());
+            if (producto.getTipo() != TipoProducto.SERVICIO) {
                 productoRepository.save(producto);
             }
         }
@@ -185,7 +183,7 @@ public class VentaServiceImpl implements VentaService {
         venta.setFechaVenta(request.getFechaVenta() != null ? request.getFechaVenta() : LocalDateTime.now());
         venta.setNombreCliente(request.getNombreCliente());
         venta.setTipoCliente(request.getTipoCliente());
-        venta.setEstado(EstadoVenta.BORRADOR);
+        venta.setEstado(EstadoVenta.BORRADOR); // Borrador no resta stock
         venta.setMoneda(request.getMoneda());
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
@@ -226,20 +224,19 @@ public class VentaServiceImpl implements VentaService {
     }
 
     // ==========================================
-    // 4. ACTUALIZAR VENTA (SIN RESTRICCIONES DE ESTADO)
+    // 4. ACTUALIZAR VENTA
     // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO actualizarVenta(Integer id, VentaRequestDTO request) {
         Venta venta = ventaRepository.findById(id).orElseThrow(() -> new RuntimeException("Venta no encontrada"));
 
-        // 1. DEVOLVER EL STOCK DE LOS PRODUCTOS ANTERIORES
-        // ✅ CORRECCIÓN: Solo devolvemos stock si la venta original era COMPLETADA o PENDIENTE (los borradores no descuentan)
+        // 1. DEVOLVER EL STOCK DE LOS PRODUCTOS ANTERIORES AL ALMACÉN
         if (venta.getEstado() == EstadoVenta.COMPLETADA || venta.getEstado() == EstadoVenta.PENDIENTE) {
             for (DetalleVenta det : venta.getDetalles()) {
                 Producto p = det.getProducto();
-                if (p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
-                    p.setStockActual(p.getStockActual() + det.getCantidad());
+                if (p.getTipo() != TipoProducto.SERVICIO) {
+                    devolverStock(p, det.getCantidad());
                     productoRepository.save(p);
                 }
             }
@@ -263,12 +260,9 @@ public class VentaServiceImpl implements VentaService {
         for (DetalleVentaRequestDTO detDTO : request.getDetalles()) {
             Producto p = productoRepository.findById(detDTO.getProductoId()).orElseThrow();
 
-            // Validar y descontar stock si la nueva versión NO es un borrador
-            if (venta.getEstado() != EstadoVenta.BORRADOR && p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
-                if (p.getStockActual() < detDTO.getCantidad()) {
-                    throw new RuntimeException("Stock insuficiente para: " + p.getNombre());
-                }
-                p.setStockActual(p.getStockActual() - detDTO.getCantidad());
+            // Validar y descontar stock del Almacén si NO es un borrador
+            if (venta.getEstado() != EstadoVenta.BORRADOR && p.getTipo() != TipoProducto.SERVICIO) {
+                restarStock(p, detDTO.getCantidad());
                 productoRepository.save(p);
             }
 
@@ -311,7 +305,7 @@ public class VentaServiceImpl implements VentaService {
         // Recalcular saldo si no es borrador
         if (venta.getEstado() != EstadoVenta.BORRADOR) {
             BigDecimal saldo = totalVenta.subtract(totalPagado);
-            if (saldo.compareTo(new BigDecimal("0.10")) <= 0) { // Tolerancia de céntimos
+            if (saldo.compareTo(new BigDecimal("0.10")) <= 0) {
                 venta.setSaldoPendiente(BigDecimal.ZERO);
                 venta.setEstado(EstadoVenta.COMPLETADA);
             } else {
@@ -321,6 +315,60 @@ public class VentaServiceImpl implements VentaService {
         }
 
         return convertirAResponseDTO(ventaRepository.save(venta));
+    }
+
+    // ==========================================
+    // 5. COMPLETAR VENTA (Desde Borrador)
+    // ==========================================
+    @Override
+    @Transactional
+    public VentaResponseDTO completarVenta(Integer id) {
+        Venta venta = ventaRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Venta no encontrada"));
+
+        if (venta.getEstado() == EstadoVenta.CANCELADA || venta.getEstado() == EstadoVenta.COMPLETADA) {
+            return convertirAResponseDTO(venta);
+        }
+
+        // 1. DESCONTAR EL STOCK DEL ALMACÉN (Porque era un borrador)
+        if (venta.getEstado() == EstadoVenta.BORRADOR) {
+            for (DetalleVenta det : venta.getDetalles()) {
+                Producto p = det.getProducto();
+                if (p.getTipo() != TipoProducto.SERVICIO) {
+                    restarStock(p, det.getCantidad());
+                    productoRepository.save(p);
+                }
+            }
+        }
+
+        // 2. CAMBIAR EL ESTADO
+        if (venta.getSaldoPendiente() != null && venta.getSaldoPendiente().compareTo(new BigDecimal("0.10")) > 0) {
+            venta.setEstado(EstadoVenta.PENDIENTE);
+        } else {
+            venta.setEstado(EstadoVenta.COMPLETADA);
+        }
+
+        return convertirAResponseDTO(ventaRepository.save(venta));
+    }
+
+    // ==========================================
+    // CANCELAR VENTA
+    // ==========================================
+    @Override
+    @Transactional
+    public void cancelarVenta(Integer id) {
+        Venta venta = ventaRepository.findById(id).orElseThrow();
+        if (venta.getEstado() == EstadoVenta.COMPLETADA || venta.getEstado() == EstadoVenta.PENDIENTE) {
+            for(DetalleVenta det : venta.getDetalles()) {
+                Producto p = det.getProducto();
+                if(p.getTipo() != TipoProducto.SERVICIO) {
+                    devolverStock(p, det.getCantidad());
+                    productoRepository.save(p);
+                }
+            }
+        }
+        venta.setEstado(EstadoVenta.CANCELADA);
+        ventaRepository.save(venta);
     }
 
     // ==========================================
@@ -352,31 +400,56 @@ public class VentaServiceImpl implements VentaService {
     @Transactional
     public void eliminarVenta(Integer id) { ventaRepository.deleteById(id); }
 
-    @Override
-    @Transactional
-    public void cancelarVenta(Integer id) {
-        Venta venta = ventaRepository.findById(id).orElseThrow();
-        for(DetalleVenta det : venta.getDetalles()) {
-            Producto p = det.getProducto();
-            if(p.getTipo() != TipoProducto.SERVICIO && p.getTipo() == TipoProducto.PRODUCTO) {
-                p.setStockActual(p.getStockActual() + det.getCantidad());
-                productoRepository.save(p);
-            }
-        }
-        venta.setEstado(EstadoVenta.CANCELADA);
-        ventaRepository.save(venta);
-    }
-
     @Override public VentaResponseDTO buscarPorCodigo(String codigo) { return convertirAResponseDTO(ventaRepository.findByCodigo(codigo).orElseThrow()); }
     @Override public List<VentaResponseDTO> buscarPorCliente(String nombre) { return ventaRepository.buscarPorCliente(nombre).stream().map(this::convertirAResponseDTO).collect(Collectors.toList()); }
     @Override public Long contarVentasPorEstado(EstadoVenta estado) { return ventaRepository.contarPorEstado(estado); }
     @Override public List<VentaResponseDTO> listarPorFecha(LocalDateTime i, LocalDateTime f) { return new ArrayList<>(); }
     @Override public VentaResponseDTO convertirBorradorAVenta(Integer id) { return obtenerVenta(id); }
-    @Override public VentaResponseDTO completarVenta(Integer id) { return obtenerVenta(id); }
 
     // ==========================================
-    // HELPERS
+    // HELPERS MÁGICOS DE STOCK (NUEVO)
     // ==========================================
+
+    private void restarStock(Producto p, int cantidad) {
+        if (p.getStockActual() < cantidad) {
+            throw new RuntimeException("Stock insuficiente para: " + p.getNombre());
+        }
+
+        // 1. Restar del total general
+        p.setStockActual(p.getStockActual() - cantidad);
+
+        // 2. Restar de los almacenes
+        int restante = cantidad;
+        if (p.getProductosAlmacen() != null) {
+            for (ProductoAlmacen pa : p.getProductosAlmacen()) {
+                if (pa.getActivo() != null && pa.getActivo() && pa.getStock() > 0 && restante > 0) {
+                    if (pa.getStock() >= restante) {
+                        pa.setStock(pa.getStock() - restante);
+                        restante = 0;
+                    } else {
+                        restante -= pa.getStock();
+                        pa.setStock(0);
+                    }
+                }
+            }
+        }
+    }
+
+    private void devolverStock(Producto p, int cantidad) {
+        // 1. Sumar al total general
+        p.setStockActual(p.getStockActual() + cantidad);
+
+        // 2. Devolverlo al primer almacén activo que exista
+        if (p.getProductosAlmacen() != null) {
+            for (ProductoAlmacen pa : p.getProductosAlmacen()) {
+                if (pa.getActivo() != null && pa.getActivo()) {
+                    pa.setStock(pa.getStock() + cantidad);
+                    return; // Solo lo regresamos a un almacén para no duplicarlo
+                }
+            }
+        }
+    }
+
     private BigDecimal normalizarMonto(BigDecimal montoPago, String monedaPago, String monedaVenta, BigDecimal tipoCambio) {
         if (monedaPago.equals(monedaVenta)) return montoPago;
         if ("USD".equals(monedaPago) && "PEN".equals(monedaVenta)) return montoPago.multiply(tipoCambio).setScale(2, RoundingMode.HALF_UP);
@@ -389,8 +462,6 @@ public class VentaServiceImpl implements VentaService {
 
     private String generarCodigoVenta() { return "VTA-" + System.currentTimeMillis(); }
 
-    // ✅ MODIFICADO: Ahora extrae TODO para que Angular pueda armar el formulario de edición
-    // ✅ MODIFICADO: Extrae TODO lo necesario, pero SIN el cuentaBancariaId
     private VentaResponseDTO convertirAResponseDTO(Venta venta) {
         VentaResponseDTO dto = new VentaResponseDTO();
         dto.setId(venta.getId());
@@ -408,7 +479,6 @@ public class VentaServiceImpl implements VentaService {
         dto.setSaldoPendiente(venta.getSaldoPendiente());
         dto.setNotas(venta.getNotas());
 
-        // Detalles: ENVÍA IDs, PRECIOS Y DESCUENTOS PARA EL FRONTEND
         List<DetalleVentaResponseDTO> detDTOs = venta.getDetalles().stream().map(d -> {
             DetalleVentaResponseDTO dd = new DetalleVentaResponseDTO();
             dd.setId(d.getId());
@@ -422,7 +492,6 @@ public class VentaServiceImpl implements VentaService {
         }).collect(Collectors.toList());
         dto.setDetalles(detDTOs);
 
-        // Pagos: SOLO ENVÍA EL NOMBRE, YA NO PIDE EL ID
         if (venta.getPagos() != null) {
             List<VentaResponseDTO.PagoResponseDTO> pagosDTO = venta.getPagos().stream().map(p -> {
                 VentaResponseDTO.PagoResponseDTO pp = new VentaResponseDTO.PagoResponseDTO();
@@ -433,7 +502,6 @@ public class VentaServiceImpl implements VentaService {
                 pp.setFechaPago(p.getFechaPago().toString());
                 pp.setReferencia(p.getReferencia());
 
-                // ✅ Solo mandamos el texto, eliminamos el setCuentaBancariaId
                 if (p.getCuentaDestino() != null) {
                     pp.setNombreCuentaDestino(p.getCuentaDestino().getTitular() + " - " + p.getCuentaDestino().getBanco());
                 }

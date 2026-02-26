@@ -48,4 +48,7 @@ public class CompraResponseDTO {
     private BigDecimal costoTotalImportacion;
 
     private List<CompraDetalleResponseDTO> detalles;
+
+    // 🟢 ¡CORRECCIÓN AQUÍ!: Para que el DTO pueda recibir la lista de pagos
+    private List<PagoCompraResponseDTO> pagos;
 }

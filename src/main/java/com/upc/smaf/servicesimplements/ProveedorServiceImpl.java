@@ -124,15 +124,11 @@ public class ProveedorServiceImpl implements ProveedorService {
     }
 
     private void validarIdentificacionPorPais(String iden, String pais) {
+        // ✅ CORRECCIÓN: Solo validamos a Perú. Si es de China u Otro, lo dejamos pasar libremente.
         if ("PERÚ".equals(pais) || "PERU".equals(pais)) {
             // RUC Peruano: 11 dígitos numéricos
             if (!iden.matches("\\d{11}")) {
                 throw new IllegalArgumentException("El RUC peruano debe tener exactamente 11 dígitos numéricos.");
-            }
-        } else if ("CHINA".equals(pais)) {
-            // USCC Chino: 18 caracteres alfanuméricos
-            if (iden.length() != 18) {
-                throw new IllegalArgumentException("El código USCC de China debe tener exactamente 18 caracteres.");
             }
         }
     }
@@ -153,7 +149,7 @@ public class ProveedorServiceImpl implements ProveedorService {
         dto.setId(proveedor.getId());
         dto.setNombre(proveedor.getNombre());
         dto.setRuc(proveedor.getRuc());
-        dto.setPais(proveedor.getPais()); // Nuevo campo
+        dto.setPais(proveedor.getPais());
         dto.setContacto(proveedor.getContacto());
         dto.setTelefono(proveedor.getTelefono());
         dto.setEmail(proveedor.getEmail());
