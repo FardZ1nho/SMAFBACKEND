@@ -18,10 +18,8 @@ public class VentaResponseDTO {
     private LocalDateTime fechaVenta;
     private String nombreCliente;
     private TipoCliente tipoCliente;
-
     private TipoPago tipoPago;
 
-    // Campos financieros
     private BigDecimal montoInicial;
     private Integer numeroCuotas;
     private BigDecimal montoCuota;
@@ -33,22 +31,22 @@ public class VentaResponseDTO {
     private String tipoDocumento;
     private String numeroDocumento;
 
+    // --- NUEVO: RETENCIÓN Y DETRACCIÓN ---
+    private BigDecimal retencion;
+    private BigDecimal detraccion;
+
     private BigDecimal subtotal;
     private BigDecimal igv;
     private BigDecimal total;
     private String notas;
     private EstadoVenta estado;
 
-    // Lista de productos
     private List<DetalleVentaResponseDTO> detalles;
-
-    // ✅ CORRECCIÓN CRÍTICA: Descomentamos la lista de pagos para enviarla a Angular
     private List<PagoResponseDTO> pagos;
 
     private LocalDateTime fechaCreacion;
     private LocalDateTime fechaActualizacion;
 
-    // ✅ Clase interna para estructurar el pago en la respuesta
     @Data
     public static class PagoResponseDTO {
         private Integer id;
@@ -57,6 +55,6 @@ public class VentaResponseDTO {
         private MetodoPago metodoPago;
         private String fechaPago;
         private String referencia;
-        private String nombreCuentaDestino; // Opcional, si quieres mostrar banco
+        private String nombreCuentaDestino;
     }
 }

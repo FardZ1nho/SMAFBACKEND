@@ -63,6 +63,13 @@ public class Venta {
     @Column(name = "numero_documento", length = 50)
     private String numeroDocumento;
 
+    // --- NUEVO: RETENCIÓN Y DETRACCIÓN (MONTOS) ---
+    @Column(precision = 10, scale = 2)
+    private BigDecimal retencion;
+
+    @Column(precision = 10, scale = 2)
+    private BigDecimal detraccion;
+
     // --- TOTALES ---
     @Column(precision = 10, scale = 2, nullable = false)
     private BigDecimal subtotal;
@@ -81,13 +88,9 @@ public class Venta {
     private EstadoVenta estado;
 
     // --- RELACIONES ---
-
-    // Detalles de productos
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DetalleVenta> detalles = new ArrayList<>();
 
-    // ✅ CORRECCIÓN CRÍTICA: fetch = FetchType.EAGER
-    // Esto obliga a Java a traer los pagos siempre que consultes la venta.
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     private List<Pago> pagos = new ArrayList<>();
 
@@ -105,6 +108,8 @@ public class Venta {
         if (montoInicial == null) montoInicial = BigDecimal.ZERO;
         if (saldoPendiente == null) saldoPendiente = BigDecimal.ZERO;
         if (numeroCuotas == null) numeroCuotas = 0;
+        if (retencion == null) retencion = BigDecimal.ZERO;
+        if (detraccion == null) detraccion = BigDecimal.ZERO;
     }
 
     @PreUpdate
@@ -112,7 +117,6 @@ public class Venta {
         fechaActualizacion = LocalDateTime.now();
     }
 
-    // --- MÉTODOS HELPER (Importantes para guardar la relación) ---
     public void agregarDetalle(DetalleVenta detalle) {
         detalles.add(detalle);
         detalle.setVenta(this);
@@ -120,6 +124,6 @@ public class Venta {
 
     public void agregarPago(Pago pago) {
         pagos.add(pago);
-        pago.setVenta(this); // Esto vincula el hijo con el padre
+        pago.setVenta(this);
     }
 }

@@ -50,13 +50,16 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoDocumento(request.getTipoDocumento());
         venta.setNumeroDocumento(request.getNumeroDocumento());
 
+        // Mapeamos retención y detracción
+        venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
+        venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
+
         BigDecimal subtotalAcumulado = BigDecimal.ZERO;
 
         for (DetalleVentaRequestDTO detalleDTO : request.getDetalles()) {
             Producto producto = productoRepository.findById(detalleDTO.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detalleDTO.getProductoId()));
 
-            // Descontamos stock (El helper ahora es inteligente y sabe si es KIT o Físico)
             if (producto.getTipo() != TipoProducto.SERVICIO) {
                 restarStock(producto, detalleDTO.getCantidad());
             }
@@ -111,15 +114,18 @@ public class VentaServiceImpl implements VentaService {
 
         venta.setMontoInicial(totalPagadoNormalizado);
 
+        // ✅ Lo que el cliente REALMENTE DEBE PAGAR es el Total menos la Retención y Detracción
+        BigDecimal montoRealAPagar = totalVenta.subtract(venta.getRetencion()).subtract(venta.getDetraccion());
+
         if (venta.getTipoPago() == TipoPago.CONTADO) {
-            BigDecimal diferencia = totalVenta.subtract(totalPagadoNormalizado);
+            BigDecimal diferencia = montoRealAPagar.subtract(totalPagadoNormalizado);
             if (diferencia.compareTo(new BigDecimal("0.10")) > 0) {
-                throw new RuntimeException("Pago incompleto para venta al CONTADO.");
+                throw new RuntimeException("Pago incompleto para venta al CONTADO. Faltan pagar " + diferencia);
             }
             venta.setSaldoPendiente(BigDecimal.ZERO);
             venta.setEstado(EstadoVenta.COMPLETADA);
         } else {
-            BigDecimal saldo = totalVenta.subtract(totalPagadoNormalizado);
+            BigDecimal saldo = montoRealAPagar.subtract(totalPagadoNormalizado);
             if (saldo.compareTo(BigDecimal.ZERO) < 0) saldo = BigDecimal.ZERO;
             venta.setSaldoPendiente(saldo);
 
@@ -174,10 +180,13 @@ public class VentaServiceImpl implements VentaService {
         venta.setFechaVenta(request.getFechaVenta() != null ? request.getFechaVenta() : LocalDateTime.now());
         venta.setNombreCliente(request.getNombreCliente());
         venta.setTipoCliente(request.getTipoCliente());
-        venta.setEstado(EstadoVenta.BORRADOR); // Borrador no resta stock
+        venta.setEstado(EstadoVenta.BORRADOR);
         venta.setMoneda(request.getMoneda());
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
+
+        venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
+        venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
 
         if (request.getDetalles() != null) {
             for (DetalleVentaRequestDTO det : request.getDetalles()) {
@@ -242,6 +251,9 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
+        venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
+        venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
+
         BigDecimal subtotalAcumulado = BigDecimal.ZERO;
 
         for (DetalleVentaRequestDTO detDTO : request.getDetalles()) {
@@ -288,7 +300,9 @@ public class VentaServiceImpl implements VentaService {
         venta.setMontoInicial(totalPagado);
 
         if (venta.getEstado() != EstadoVenta.BORRADOR) {
-            BigDecimal saldo = totalVenta.subtract(totalPagado);
+            BigDecimal montoRealAPagar = totalVenta.subtract(venta.getRetencion()).subtract(venta.getDetraccion());
+            BigDecimal saldo = montoRealAPagar.subtract(totalPagado);
+
             if (saldo.compareTo(new BigDecimal("0.10")) <= 0) {
                 venta.setSaldoPendiente(BigDecimal.ZERO);
                 venta.setEstado(EstadoVenta.COMPLETADA);
@@ -380,11 +394,10 @@ public class VentaServiceImpl implements VentaService {
     @Override public VentaResponseDTO convertirBorradorAVenta(Integer id) { return obtenerVenta(id); }
 
     // ==========================================
-    // 🟢 HELPERS MÁGICOS DE STOCK (ACTUALIZADOS PARA KITS)
+    // HELPERS MÁGICOS DE STOCK
     // ==========================================
 
     private void restarStock(Producto p, int cantidad) {
-        // ✅ SI ES UN KIT: Desarmamos el kit y le restamos la cantidad a los hijos
         if (p.getTipo() == TipoProducto.KIT) {
             if (p.getComponentes() == null || p.getComponentes().isEmpty()) {
                 throw new RuntimeException("El Kit " + p.getNombre() + " no tiene componentes configurados.");
@@ -392,20 +405,16 @@ public class VentaServiceImpl implements VentaService {
             for (ProductoKit pk : p.getComponentes()) {
                 Producto hijo = pk.getComponente();
                 int cantidadNecesaria = pk.getCantidad() * cantidad;
-                restarStock(hijo, cantidadNecesaria); // Recursividad: restamos al hijo
+                restarStock(hijo, cantidadNecesaria);
             }
-            return; // Salimos de la función porque el KIT no tiene stock físico directo
+            return;
         }
 
-        // LÓGICA NORMAL: Si es un producto físico normal
         if (p.getStockActual() < cantidad) {
             throw new RuntimeException("Stock insuficiente para: " + p.getNombre());
         }
 
-        // 1. Restar del total general
         p.setStockActual(p.getStockActual() - cantidad);
-
-        // 2. Restar de los almacenes
         int restante = cantidad;
         if (p.getProductosAlmacen() != null) {
             for (ProductoAlmacen pa : p.getProductosAlmacen()) {
@@ -423,28 +432,23 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private void devolverStock(Producto p, int cantidad) {
-        // ✅ SI ES UN KIT: Le devolvemos el stock a los hijos que lo componen
         if (p.getTipo() == TipoProducto.KIT) {
             if (p.getComponentes() != null) {
                 for (ProductoKit pk : p.getComponentes()) {
                     Producto hijo = pk.getComponente();
                     int cantidadDevolver = pk.getCantidad() * cantidad;
-                    devolverStock(hijo, cantidadDevolver); // Recursividad: devolvemos al hijo
+                    devolverStock(hijo, cantidadDevolver);
                 }
             }
-            return; // Salimos de la función
+            return;
         }
 
-        // LÓGICA NORMAL: Si es un producto físico normal
-        // 1. Sumar al total general
         p.setStockActual(p.getStockActual() + cantidad);
-
-        // 2. Devolverlo al primer almacén activo que exista
         if (p.getProductosAlmacen() != null) {
             for (ProductoAlmacen pa : p.getProductosAlmacen()) {
                 if (pa.getActivo() != null && pa.getActivo()) {
                     pa.setStock(pa.getStock() + cantidad);
-                    return; // Solo lo regresamos a un almacén para no duplicarlo
+                    return;
                 }
             }
         }
@@ -472,12 +476,19 @@ public class VentaServiceImpl implements VentaService {
         dto.setEstado(venta.getEstado());
         dto.setTipoPago(venta.getTipoPago());
 
+        // ✅ AGREGADO: Mapeo de Documento y Moneda
+        dto.setTipoDocumento(venta.getTipoDocumento());
+        dto.setNumeroDocumento(venta.getNumeroDocumento());
         dto.setMoneda(venta.getMoneda());
+
         dto.setTotal(venta.getTotal());
         dto.setSubtotal(venta.getSubtotal());
         dto.setIgv(venta.getIgv());
         dto.setSaldoPendiente(venta.getSaldoPendiente());
         dto.setNotas(venta.getNotas());
+
+        dto.setRetencion(venta.getRetencion());
+        dto.setDetraccion(venta.getDetraccion());
 
         List<DetalleVentaResponseDTO> detDTOs = venta.getDetalles().stream().map(d -> {
             DetalleVentaResponseDTO dd = new DetalleVentaResponseDTO();
