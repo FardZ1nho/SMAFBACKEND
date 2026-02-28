@@ -247,6 +247,10 @@ public class VentaServiceImpl implements VentaService {
         venta.getPagos().clear();
 
         // 3. ACTUALIZAR DATOS BASE
+        // ✅ CORRECCIÓN CLAVE AQUÍ: Agregar el mapeo de la fecha
+        if (request.getFechaVenta() != null) {
+            venta.setFechaVenta(request.getFechaVenta());
+        }
         venta.setNombreCliente(request.getNombreCliente());
         venta.setTipoCliente(request.getTipoCliente());
         venta.setNotas(request.getNotas());
@@ -270,7 +274,7 @@ public class VentaServiceImpl implements VentaService {
             det.setProducto(p);
             det.setCantidad(detDTO.getCantidad());
             det.setPrecioUnitario(detDTO.getPrecioUnitario());
-            det.setDescuento(detDTO.getDescuento() != null ? detDTO.getDescuento() : BigDecimal.ZERO);
+            det.setDescuento(detDTO.getDescuento() != null ? det.getDescuento() : BigDecimal.ZERO);
             det.calcularSubtotal();
 
             venta.agregarDetalle(det);
