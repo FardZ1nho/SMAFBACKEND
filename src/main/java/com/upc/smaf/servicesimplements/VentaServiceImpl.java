@@ -30,9 +30,6 @@ public class VentaServiceImpl implements VentaService {
 
     private static final BigDecimal IGV_PORCENTAJE = new BigDecimal("0.18");
 
-    // ==========================================
-    // 1. CREAR VENTA
-    // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO crearVenta(VentaRequestDTO request) {
@@ -59,7 +56,7 @@ public class VentaServiceImpl implements VentaService {
             Producto producto = productoRepository.findById(detalleDTO.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado ID: " + detalleDTO.getProductoId()));
 
-            // ⭐ NUEVO: Usamos el helper inteligente para restar stock (General + Almacén)
+            // Descontamos stock (El helper ahora es inteligente y sabe si es KIT o Físico)
             if (producto.getTipo() != TipoProducto.SERVICIO) {
                 restarStock(producto, detalleDTO.getCantidad());
             }
@@ -141,9 +138,6 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaGuardada);
     }
 
-    // ==========================================
-    // 2. REGISTRAR AMORTIZACIÓN
-    // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO registrarAmortizacion(Integer ventaId, BigDecimal monto, MetodoPago metodo, Integer cuentaId) {
@@ -172,9 +166,6 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
 
-    // ==========================================
-    // 3. GUARDAR BORRADOR
-    // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO guardarBorrador(VentaRequestDTO request) {
@@ -223,15 +214,11 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
 
-    // ==========================================
-    // 4. ACTUALIZAR VENTA
-    // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO actualizarVenta(Integer id, VentaRequestDTO request) {
         Venta venta = ventaRepository.findById(id).orElseThrow(() -> new RuntimeException("Venta no encontrada"));
 
-        // 1. DEVOLVER EL STOCK DE LOS PRODUCTOS ANTERIORES AL ALMACÉN
         if (venta.getEstado() == EstadoVenta.COMPLETADA || venta.getEstado() == EstadoVenta.PENDIENTE) {
             for (DetalleVenta det : venta.getDetalles()) {
                 Producto p = det.getProducto();
@@ -242,12 +229,9 @@ public class VentaServiceImpl implements VentaService {
             }
         }
 
-        // 2. LIMPIAR DETALLES Y PAGOS ANTIGUOS
         venta.getDetalles().clear();
         venta.getPagos().clear();
 
-        // 3. ACTUALIZAR DATOS BASE
-        // ✅ CORRECCIÓN CLAVE AQUÍ: Agregar el mapeo de la fecha
         if (request.getFechaVenta() != null) {
             venta.setFechaVenta(request.getFechaVenta());
         }
@@ -258,13 +242,11 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
-        // 4. AGREGAR NUEVOS DETALLES Y DESCONTAR NUEVO STOCK
         BigDecimal subtotalAcumulado = BigDecimal.ZERO;
 
         for (DetalleVentaRequestDTO detDTO : request.getDetalles()) {
             Producto p = productoRepository.findById(detDTO.getProductoId()).orElseThrow();
 
-            // Validar y descontar stock del Almacén si NO es un borrador
             if (venta.getEstado() != EstadoVenta.BORRADOR && p.getTipo() != TipoProducto.SERVICIO) {
                 restarStock(p, detDTO.getCantidad());
                 productoRepository.save(p);
@@ -287,7 +269,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setSubtotal(subtotalBase);
         venta.setIgv(totalVenta.subtract(subtotalBase));
 
-        // 5. RE-AGREGAR PAGOS
         BigDecimal totalPagado = BigDecimal.ZERO;
         if (request.getPagos() != null) {
             for (VentaRequestDTO.PagoRequestDTO pDTO : request.getPagos()) {
@@ -306,7 +287,6 @@ public class VentaServiceImpl implements VentaService {
 
         venta.setMontoInicial(totalPagado);
 
-        // Recalcular saldo si no es borrador
         if (venta.getEstado() != EstadoVenta.BORRADOR) {
             BigDecimal saldo = totalVenta.subtract(totalPagado);
             if (saldo.compareTo(new BigDecimal("0.10")) <= 0) {
@@ -321,9 +301,6 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
 
-    // ==========================================
-    // 5. COMPLETAR VENTA (Desde Borrador)
-    // ==========================================
     @Override
     @Transactional
     public VentaResponseDTO completarVenta(Integer id) {
@@ -334,7 +311,6 @@ public class VentaServiceImpl implements VentaService {
             return convertirAResponseDTO(venta);
         }
 
-        // 1. DESCONTAR EL STOCK DEL ALMACÉN (Porque era un borrador)
         if (venta.getEstado() == EstadoVenta.BORRADOR) {
             for (DetalleVenta det : venta.getDetalles()) {
                 Producto p = det.getProducto();
@@ -345,7 +321,6 @@ public class VentaServiceImpl implements VentaService {
             }
         }
 
-        // 2. CAMBIAR EL ESTADO
         if (venta.getSaldoPendiente() != null && venta.getSaldoPendiente().compareTo(new BigDecimal("0.10")) > 0) {
             venta.setEstado(EstadoVenta.PENDIENTE);
         } else {
@@ -355,9 +330,6 @@ public class VentaServiceImpl implements VentaService {
         return convertirAResponseDTO(ventaRepository.save(venta));
     }
 
-    // ==========================================
-    // CANCELAR VENTA
-    // ==========================================
     @Override
     @Transactional
     public void cancelarVenta(Integer id) {
@@ -375,9 +347,6 @@ public class VentaServiceImpl implements VentaService {
         ventaRepository.save(venta);
     }
 
-    // ==========================================
-    // LECTURA Y OTROS
-    // ==========================================
     @Override
     @Transactional(readOnly = true)
     public VentaResponseDTO obtenerVenta(Integer id) {
@@ -411,10 +380,24 @@ public class VentaServiceImpl implements VentaService {
     @Override public VentaResponseDTO convertirBorradorAVenta(Integer id) { return obtenerVenta(id); }
 
     // ==========================================
-    // HELPERS MÁGICOS DE STOCK (NUEVO)
+    // 🟢 HELPERS MÁGICOS DE STOCK (ACTUALIZADOS PARA KITS)
     // ==========================================
 
     private void restarStock(Producto p, int cantidad) {
+        // ✅ SI ES UN KIT: Desarmamos el kit y le restamos la cantidad a los hijos
+        if (p.getTipo() == TipoProducto.KIT) {
+            if (p.getComponentes() == null || p.getComponentes().isEmpty()) {
+                throw new RuntimeException("El Kit " + p.getNombre() + " no tiene componentes configurados.");
+            }
+            for (ProductoKit pk : p.getComponentes()) {
+                Producto hijo = pk.getComponente();
+                int cantidadNecesaria = pk.getCantidad() * cantidad;
+                restarStock(hijo, cantidadNecesaria); // Recursividad: restamos al hijo
+            }
+            return; // Salimos de la función porque el KIT no tiene stock físico directo
+        }
+
+        // LÓGICA NORMAL: Si es un producto físico normal
         if (p.getStockActual() < cantidad) {
             throw new RuntimeException("Stock insuficiente para: " + p.getNombre());
         }
@@ -440,6 +423,19 @@ public class VentaServiceImpl implements VentaService {
     }
 
     private void devolverStock(Producto p, int cantidad) {
+        // ✅ SI ES UN KIT: Le devolvemos el stock a los hijos que lo componen
+        if (p.getTipo() == TipoProducto.KIT) {
+            if (p.getComponentes() != null) {
+                for (ProductoKit pk : p.getComponentes()) {
+                    Producto hijo = pk.getComponente();
+                    int cantidadDevolver = pk.getCantidad() * cantidad;
+                    devolverStock(hijo, cantidadDevolver); // Recursividad: devolvemos al hijo
+                }
+            }
+            return; // Salimos de la función
+        }
+
+        // LÓGICA NORMAL: Si es un producto físico normal
         // 1. Sumar al total general
         p.setStockActual(p.getStockActual() + cantidad);
 
