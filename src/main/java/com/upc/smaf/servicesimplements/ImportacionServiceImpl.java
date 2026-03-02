@@ -23,7 +23,7 @@ public class ImportacionServiceImpl implements ImportacionService {
     private final ImportacionRepository importacionRepository;
     private final CompraRepository compraRepository;
     private final CompraDetalleRepository compraDetalleRepository;
-    private final ProductoRepository productoRepository; // ✅ AÑADIDO PARA ACTUALIZAR STOCK
+    private final ProductoRepository productoRepository;
 
     @Override
     public List<ImportacionResponseDTO> listarTodas() {
@@ -56,7 +56,7 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     @Override
     public ImportacionResponseDTO guardar(ImportacionRequestDTO request) {
-        return null; // Implementar si es necesario
+        return null;
     }
 
     @Override
@@ -100,7 +100,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         // =================================================================================
         // 🚀 3. PROCESAR AD VALOREM MANUAL POR ÍTEM (DE ABAJO HACIA ARRIBA)
         // =================================================================================
-
         List<Compra> facturas = compraRepository.findByCodImportacion(imp.getCodigoAgrupador());
         Map<Integer, BigDecimal> advMap = request.getAdValoremPorItem();
 
@@ -133,7 +132,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         // =================================================================================
         // 🚀 4. PRORRATEO TRADICIONAL (DE ARRIBA HACIA ABAJO)
         // =================================================================================
-
         BigDecimal totalFob = BigDecimal.ZERO;
         BigDecimal totalPeso = BigDecimal.ZERO;
         BigDecimal totalCbm = BigDecimal.ZERO;
@@ -227,21 +225,30 @@ public class ImportacionServiceImpl implements ImportacionService {
         List<CompraDetalle> detalles = c.getDetalles();
         if (detalles == null || detalles.isEmpty()) return;
 
-        BigDecimal totalFobFactura = c.getTotal();
-        if (totalFobFactura == null || totalFobFactura.compareTo(BigDecimal.ZERO) == 0) return;
+        // ✅ 1. Calcular suma real de los productos (FOB puro)
+        BigDecimal sumaSubtotalesPuros = BigDecimal.ZERO;
+        for (CompraDetalle item : detalles) {
+            if (item.getPrecioUnitario() != null && item.getCantidad() != null) {
+                sumaSubtotalesPuros = sumaSubtotalesPuros.add(item.getPrecioUnitario().multiply(new BigDecimal(item.getCantidad())));
+            }
+        }
+        if (sumaSubtotalesPuros.compareTo(BigDecimal.ZERO) == 0) return;
 
+        // ✅ 2. El sobrecosto a repartir = Costo Total - Costo Puro Ítems - AdValorem
+        // ¡Al restarle el costo puro, los $908 del flete de origen pasan a ser un "sobrecosto a repartir"!
         BigDecimal totalSobrecostosProrrateables = c.getCostoTotalImportacion()
-                .subtract(totalFobFactura)
+                .subtract(sumaSubtotalesPuros)
                 .subtract(orZero(c.getProAdv()));
 
         for (CompraDetalle item : detalles) {
-            // ✅ BLINDAJE: Calculamos el FOB real en vivo (Cantidad * Precio) ignorando datos sucios
             BigDecimal importeFobItem = BigDecimal.ZERO;
             if (item.getPrecioUnitario() != null && item.getCantidad() != null) {
                 importeFobItem = item.getPrecioUnitario().multiply(new BigDecimal(item.getCantidad()));
             }
 
-            BigDecimal factor = importeFobItem.divide(totalFobFactura, 10, RoundingMode.HALF_UP);
+            // ✅ 3. Factor 100% real basado solo en los productos
+            BigDecimal factor = importeFobItem.divide(sumaSubtotalesPuros, 10, RoundingMode.HALF_UP);
+
             BigDecimal sobrecostoItem = totalSobrecostosProrrateables.multiply(factor);
 
             BigDecimal costoTotalLanded = importeFobItem.add(sobrecostoItem).add(orZero(item.getAdValoremItem()));
@@ -257,12 +264,8 @@ public class ImportacionServiceImpl implements ImportacionService {
     }
 
     @Override
-    public void recalcularCostos(Integer id) {
-    }
+    public void recalcularCostos(Integer id) {}
 
-    // =================================================================================
-    // ✅ NUEVO: LÓGICA DE RECEPCIÓN Y KARDEX (ACTUALIZA STOCK REAL)
-    // =================================================================================
     @Override
     @Transactional
     public void confirmarRecepcion(Integer id, List<RecepcionItemDTO> items) {
@@ -270,27 +273,22 @@ public class ImportacionServiceImpl implements ImportacionService {
                 .orElseThrow(() -> new RuntimeException("Importación no encontrada ID: " + id));
 
         if (importacion.getEstado() == EstadoImportacion.CERRADO || importacion.getEstado() == EstadoImportacion.LIQUIDADA) {
-            throw new RuntimeException("Esta importación ya fue recibida y cerrada anteriormente.");
+            throw new RuntimeException("Esta importación ya fue recibida y cerrada.");
         }
 
         for (RecepcionItemDTO item : items) {
             CompraDetalle detalle = compraDetalleRepository.findById(item.getDetalleId())
                     .orElseThrow(() -> new RuntimeException("Detalle no encontrado ID: " + item.getDetalleId()));
 
-            // Actualizamos la cantidad recibida en la factura
             detalle.setCantidadRecibida(item.getCantidadRecibida());
             compraDetalleRepository.save(detalle);
 
-            // AHORA SÍ: SUMAMOS EL STOCK REAL AL PRODUCTO
             Producto producto = detalle.getProducto();
             int stockActual = producto.getStockActual() != null ? producto.getStockActual() : 0;
-
-            // Sumamos solo lo que realmente contó el almacenero
             producto.setStockActual(stockActual + item.getCantidadRecibida());
             productoRepository.save(producto);
         }
 
-        // Cambiamos el estado a CERRADA (Ya ingresó a almacén)
         importacion.setEstado(EstadoImportacion.CERRADO);
         importacionRepository.save(importacion);
     }
@@ -394,52 +392,66 @@ public class ImportacionServiceImpl implements ImportacionService {
             r.setCostoTotalImportacion(c.getCostoTotalImportacion());
 
             if (c.getDetalles() != null) {
+                // ✅ Calcular sumatoria pura de los ítems
+                BigDecimal sumaPuraDTO = BigDecimal.ZERO;
+                for (CompraDetalle d : c.getDetalles()) {
+                    if (d.getPrecioUnitario() != null && d.getCantidad() != null) {
+                        sumaPuraDTO = sumaPuraDTO.add(d.getPrecioUnitario().multiply(new BigDecimal(d.getCantidad())));
+                    }
+                }
+                final BigDecimal totalSubtotalesPuros = sumaPuraDTO;
+
+                // ✅ Calculamos el exceso (Flete de origen) = Factura Total - Ítems Puros
+                BigDecimal costoExtraFactura = BigDecimal.ZERO;
+                if(c.getTotal() != null) {
+                    costoExtraFactura = c.getTotal().subtract(totalSubtotalesPuros);
+                }
+                final BigDecimal diferenciaOrigen = costoExtraFactura;
+
                 List<ImportacionResponseDTO.DetalleItemDTO> itemsDto = c.getDetalles().stream().map(d -> {
                     ImportacionResponseDTO.DetalleItemDTO item = new ImportacionResponseDTO.DetalleItemDTO();
                     item.setId(d.getId());
                     item.setNombreProducto(d.getProducto().getNombre());
                     item.setCantidad(new BigDecimal(d.getCantidad()));
-
-                    // ✅ AÑADIDO PARA LA VISTA DEL FRONTEND DE RECEPCIÓN
                     item.setCantidadRecibida(d.getCantidadRecibida());
                     item.setPrecioUnitarioFob(d.getPrecioUnitario());
 
-                    // ✅ BLINDAJE: Calculamos el importe real para enviarlo al Frontend
                     BigDecimal importeFobReal = BigDecimal.ZERO;
                     if (d.getPrecioUnitario() != null && d.getCantidad() != null) {
                         importeFobReal = d.getPrecioUnitario().multiply(new BigDecimal(d.getCantidad()));
                     }
                     item.setImporteFob(importeFobReal);
 
-                    // ✅ BLINDAJE: Calculamos el factor con el valor real
+                    // ✅ Factor sobre la cantidad real pura
                     BigDecimal factor = BigDecimal.ZERO;
-                    if (c.getTotal() != null && c.getTotal().compareTo(BigDecimal.ZERO) > 0) {
-                        factor = importeFobReal.divide(c.getTotal(), 10, RoundingMode.HALF_UP);
+                    if (totalSubtotalesPuros.compareTo(BigDecimal.ZERO) > 0) {
+                        factor = importeFobReal.divide(totalSubtotalesPuros, 10, RoundingMode.HALF_UP);
                     }
                     item.setFactorParticipacion(factor);
+
+                    // ✅ Distribuimos el Flete Extra visualmente en la columna 'Otros 2' para que cuadre perfecto al ojo humano
+                    BigDecimal extraOrigenItem = diferenciaOrigen.multiply(factor);
 
                     item.setItemFlete(orZero(c.getProFlete()).multiply(factor));
                     item.setItemAlmacenaje(orZero(c.getProAlmacenaje()).multiply(factor));
                     item.setItemTransporte(orZero(c.getProTransporte()).multiply(factor));
                     item.setItemDescarga(orZero(c.getProPersonalDescarga()).multiply(factor));
                     item.setItemMontacarga(orZero(c.getProMontacarga()).multiply(factor));
-
                     item.setItemDesconsolidacion(orZero(c.getProDesconsolidacion()).multiply(factor));
-
                     item.setItemVistosBuenos(orZero(c.getProVistosBuenos()).multiply(factor));
                     item.setItemTransmision(orZero(c.getProTransmision()).multiply(factor));
                     item.setItemAgente(orZero(c.getProComisionAgencia()).multiply(factor));
                     item.setItemVobo(orZero(c.getProVobo()).multiply(factor));
                     item.setItemGastosOp(orZero(c.getProGastosOperativos()).multiply(factor));
                     item.setItemResguardo(orZero(c.getProResguardo()).multiply(factor));
-
                     item.setItemIgv(orZero(c.getProIgv()).multiply(factor));
                     item.setItemIpm(orZero(c.getProIpm()).multiply(factor));
                     item.setItemPercepcion(orZero(c.getProPercepcion()).multiply(factor));
                     item.setItemAdv(orZero(d.getAdValoremItem()));
-
                     item.setItemOtros1(orZero(c.getProOtros1()).multiply(factor));
-                    item.setItemOtros2(orZero(c.getProOtros2()).multiply(factor));
+
+                    // Sumamos el extra de origen aquí para cuadrar
+                    item.setItemOtros2(orZero(c.getProOtros2()).multiply(factor).add(extraOrigenItem));
 
                     item.setCostoTotalLanded(d.getCostoTotalLanded());
                     item.setCostoUnitarioLanded(d.getCostoUnitarioLanded());
