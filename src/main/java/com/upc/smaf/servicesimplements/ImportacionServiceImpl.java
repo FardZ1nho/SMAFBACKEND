@@ -235,8 +235,11 @@ public class ImportacionServiceImpl implements ImportacionService {
                 .subtract(orZero(c.getProAdv()));
 
         for (CompraDetalle item : detalles) {
-            BigDecimal importeFobItem = item.getImporteTotal();
-            if (importeFobItem == null) importeFobItem = BigDecimal.ZERO;
+            // ✅ BLINDAJE: Calculamos el FOB real en vivo (Cantidad * Precio) ignorando datos sucios
+            BigDecimal importeFobItem = BigDecimal.ZERO;
+            if (item.getPrecioUnitario() != null && item.getCantidad() != null) {
+                importeFobItem = item.getPrecioUnitario().multiply(new BigDecimal(item.getCantidad()));
+            }
 
             BigDecimal factor = importeFobItem.divide(totalFobFactura, 10, RoundingMode.HALF_UP);
             BigDecimal sobrecostoItem = totalSobrecostosProrrateables.multiply(factor);
@@ -399,13 +402,19 @@ public class ImportacionServiceImpl implements ImportacionService {
 
                     // ✅ AÑADIDO PARA LA VISTA DEL FRONTEND DE RECEPCIÓN
                     item.setCantidadRecibida(d.getCantidadRecibida());
-
                     item.setPrecioUnitarioFob(d.getPrecioUnitario());
-                    item.setImporteFob(d.getImporteTotal());
 
+                    // ✅ BLINDAJE: Calculamos el importe real para enviarlo al Frontend
+                    BigDecimal importeFobReal = BigDecimal.ZERO;
+                    if (d.getPrecioUnitario() != null && d.getCantidad() != null) {
+                        importeFobReal = d.getPrecioUnitario().multiply(new BigDecimal(d.getCantidad()));
+                    }
+                    item.setImporteFob(importeFobReal);
+
+                    // ✅ BLINDAJE: Calculamos el factor con el valor real
                     BigDecimal factor = BigDecimal.ZERO;
-                    if (c.getTotal() != null && c.getTotal().compareTo(BigDecimal.ZERO) > 0 && d.getImporteTotal() != null) {
-                        factor = d.getImporteTotal().divide(c.getTotal(), 10, RoundingMode.HALF_UP);
+                    if (c.getTotal() != null && c.getTotal().compareTo(BigDecimal.ZERO) > 0) {
+                        factor = importeFobReal.divide(c.getTotal(), 10, RoundingMode.HALF_UP);
                     }
                     item.setFactorParticipacion(factor);
 
