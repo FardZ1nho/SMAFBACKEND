@@ -235,7 +235,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         if (sumaSubtotalesPuros.compareTo(BigDecimal.ZERO) == 0) return;
 
         // ✅ 2. El sobrecosto a repartir = Costo Total - Costo Puro Ítems - AdValorem
-        // ¡Al restarle el costo puro, los $908 del flete de origen pasan a ser un "sobrecosto a repartir"!
         BigDecimal totalSobrecostosProrrateables = c.getCostoTotalImportacion()
                 .subtract(sumaSubtotalesPuros)
                 .subtract(orZero(c.getProAdv()));
@@ -453,8 +452,25 @@ public class ImportacionServiceImpl implements ImportacionService {
                     // Sumamos el extra de origen aquí para cuadrar
                     item.setItemOtros2(orZero(c.getProOtros2()).multiply(factor).add(extraOrigenItem));
 
-                    item.setCostoTotalLanded(d.getCostoTotalLanded());
-                    item.setCostoUnitarioLanded(d.getCostoUnitarioLanded());
+                    // =========================================================================
+                    // ✅ CÁLCULO EN VIVO DEL LANDED COST (Por si la BD aún tiene null)
+                    // =========================================================================
+                    BigDecimal totalLandedCalculado = importeFobReal
+                            .add(item.getItemFlete()).add(item.getItemAlmacenaje()).add(item.getItemTransporte())
+                            .add(item.getItemDescarga()).add(item.getItemMontacarga()).add(item.getItemDesconsolidacion())
+                            .add(item.getItemVistosBuenos()).add(item.getItemTransmision()).add(item.getItemAgente())
+                            .add(item.getItemVobo()).add(item.getItemGastosOp()).add(item.getItemResguardo())
+                            .add(item.getItemIgv()).add(item.getItemIpm()).add(item.getItemPercepcion())
+                            .add(item.getItemAdv()).add(item.getItemOtros1()).add(item.getItemOtros2());
+
+                    // Si la BD tiene dato, lo usa. Si está null, usa nuestra suma en vivo:
+                    item.setCostoTotalLanded(d.getCostoTotalLanded() != null ? d.getCostoTotalLanded() : totalLandedCalculado);
+
+                    BigDecimal unitarioLandedCalculado = BigDecimal.ZERO;
+                    if (d.getCantidad() != null && d.getCantidad() > 0) {
+                        unitarioLandedCalculado = totalLandedCalculado.divide(new BigDecimal(d.getCantidad()), 4, RoundingMode.HALF_UP);
+                    }
+                    item.setCostoUnitarioLanded(d.getCostoUnitarioLanded() != null ? d.getCostoUnitarioLanded() : unitarioLandedCalculado);
 
                     return item;
                 }).collect(Collectors.toList());
