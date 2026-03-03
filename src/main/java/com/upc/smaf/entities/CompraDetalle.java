@@ -21,8 +21,9 @@ public class CompraDetalle {
     @JoinColumn(name = "compra_id", nullable = false)
     private Compra compra;
 
+    // ✅ CORREGIDO: Se quitó nullable = false para permitir Productos Libres
     @ManyToOne
-    @JoinColumn(name = "producto_id", nullable = false)
+    @JoinColumn(name = "producto_id")
     private Producto producto;
 
     @ManyToOne
@@ -32,7 +33,6 @@ public class CompraDetalle {
     @Column(nullable = false)
     private Integer cantidad;
 
-    // ✅ NUEVO CAMPO: Para validar contra lo facturado
     @Column(name = "cantidad_recibida")
     private Integer cantidadRecibida = 0;
 
@@ -50,6 +50,9 @@ public class CompraDetalle {
 
     @Column(name = "costo_total_landed", precision = 12, scale = 2)
     private BigDecimal costoTotalLanded;
+
+    @Column(name = "nombre_producto")
+    private String nombreProducto;
 
     @PrePersist
     @PreUpdate

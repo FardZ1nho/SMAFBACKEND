@@ -22,8 +22,6 @@ public class Compra {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    // ✅ CAMPO FALTANTE QUE CAUSA EL ERROR
-    // Al ponerle "= true", nos aseguramos de que nunca sea nulo al crear
     @Column(name = "activo", nullable = false)
     private Boolean activo = true;
 
@@ -131,7 +129,6 @@ public class Compra {
     private BigDecimal proOtros3;
     private BigDecimal proOtros4;
 
-    // Campos antiguos (puedes dejarlos o borrarlos si ya no los usas en BD)
     private BigDecimal proCargaDescarga;
     private BigDecimal proGastosAduaneros;
     private BigDecimal proSeguroResguardo;
@@ -142,9 +139,15 @@ public class Compra {
     private BigDecimal costoTotalImportacion;
 
     // --- RELACIONES ---
+
+    // ✅ CORREGIDO: Se quitó nullable = false para permitir Proveedores Libres
     @ManyToOne
-    @JoinColumn(name = "proveedor_id", nullable = false)
+    @JoinColumn(name = "proveedor_id")
     private Proveedor proveedor;
+
+    // ✅ NUEVO: Guardará el nombre del proveedor si es libre
+    @Column(name = "nombre_proveedor")
+    private String nombreProveedor;
 
     @ManyToOne
     @JoinColumn(name = "importacion_id")
@@ -156,7 +159,6 @@ public class Compra {
     @OneToMany(mappedBy = "compra", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<PagoCompra> pagos = new ArrayList<>();
 
-    // Helpers
     public void agregarDetalle(CompraDetalle detalle) {
         detalles.add(detalle);
         detalle.setCompra(this);

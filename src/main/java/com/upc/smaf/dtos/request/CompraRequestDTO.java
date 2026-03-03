@@ -30,8 +30,11 @@ public class CompraRequestDTO {
     private LocalDate fechaEmision;
     private LocalDate fechaVencimiento;
 
-    @NotNull(message = "El proveedor es obligatorio")
+    // ✅ CORRECCIÓN: Se quitó @NotNull porque ahora el ID puede ser nulo (Proveedor Libre)
     private Integer proveedorId;
+
+    // ✅ NUEVO: Para recibir el nombre del proveedor libre desde Angular
+    private String nombreProveedor;
 
     private String moneda;
     private BigDecimal tipoCambio;
@@ -80,7 +83,12 @@ public class CompraRequestDTO {
 
     @Data
     public static class DetalleRequestDTO {
+        // Puede ser null si es un ítem de texto libre
         private Integer productoId;
+
+        // ✅ NUEVO: Para recibir el nombre del ítem digitado manualmente
+        private String nombreProducto;
+
         private Integer almacenId;
         private Integer cantidad;
         private BigDecimal precioUnitario;

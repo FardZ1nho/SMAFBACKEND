@@ -18,7 +18,7 @@ public class CompraResponseDTO {
     private String tipoPago;
     private LocalDate fechaEmision;
     private String estado;
-
+    private Integer proveedorId;
     private String nombreProveedor;
     private String rucProveedor;
 
