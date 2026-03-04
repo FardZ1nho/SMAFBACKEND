@@ -282,10 +282,14 @@ public class ImportacionServiceImpl implements ImportacionService {
             detalle.setCantidadRecibida(item.getCantidadRecibida());
             compraDetalleRepository.save(detalle);
 
+            // ✅ ESCUDO PROTECTOR PARA TEXTOS LIBRES:
+            // Solo actualiza inventario si el producto realmente existe en la BD
             Producto producto = detalle.getProducto();
-            int stockActual = producto.getStockActual() != null ? producto.getStockActual() : 0;
-            producto.setStockActual(stockActual + item.getCantidadRecibida());
-            productoRepository.save(producto);
+            if (producto != null) {
+                int stockActual = producto.getStockActual() != null ? producto.getStockActual() : 0;
+                producto.setStockActual(stockActual + item.getCantidadRecibida());
+                productoRepository.save(producto);
+            }
         }
 
         importacion.setEstado(EstadoImportacion.CERRADO);
@@ -410,7 +414,16 @@ public class ImportacionServiceImpl implements ImportacionService {
                 List<ImportacionResponseDTO.DetalleItemDTO> itemsDto = c.getDetalles().stream().map(d -> {
                     ImportacionResponseDTO.DetalleItemDTO item = new ImportacionResponseDTO.DetalleItemDTO();
                     item.setId(d.getId());
-                    item.setNombreProducto(d.getProducto().getNombre());
+
+                    // =========================================================================
+                    // ✅ LA CORRECCIÓN PRINCIPAL: Validación segura para productos de Texto Libre
+                    // =========================================================================
+                    if (d.getProducto() != null) {
+                        item.setNombreProducto(d.getProducto().getNombre());
+                    } else {
+                        item.setNombreProducto(d.getNombreProducto() != null ? d.getNombreProducto() : "Ítem Libre");
+                    }
+
                     item.setCantidad(new BigDecimal(d.getCantidad()));
                     item.setCantidadRecibida(d.getCantidadRecibida());
                     item.setPrecioUnitarioFob(d.getPrecioUnitario());
