@@ -7,4 +7,5 @@ import java.util.List;
 public interface MovimientoCajaService {
     MovimientoCajaResponseDTO registrarMovimiento(MovimientoCajaRequestDTO request);
     List<MovimientoCajaResponseDTO> listarTodos();
+    MovimientoCajaResponseDTO actualizarMovimiento(Integer id, MovimientoCajaRequestDTO request);
 }

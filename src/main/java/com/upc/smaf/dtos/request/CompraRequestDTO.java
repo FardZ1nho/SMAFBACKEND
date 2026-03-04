@@ -35,7 +35,7 @@ public class CompraRequestDTO {
 
     // ✅ NUEVO: Para recibir el nombre del proveedor libre desde Angular
     private String nombreProveedor;
-
+    private String rucProveedor;
     private String moneda;
     private BigDecimal tipoCambio;
     private String observaciones;

@@ -35,6 +35,27 @@ public class MovimientoCajaServiceImpl implements MovimientoCajaService {
         return mapToResponseDTO(guardado);
     }
 
+    // ✅ NUEVO MÉTODO PARA ACTUALIZAR
+    @Override
+    @Transactional
+    public MovimientoCajaResponseDTO actualizarMovimiento(Integer id, MovimientoCajaRequestDTO request) {
+        MovimientoCaja movimiento = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Movimiento de caja no encontrado con ID: " + id));
+
+        movimiento.setTipo(request.getTipo());
+        movimiento.setMonto(request.getMonto());
+        movimiento.setMotivo(request.getMotivo());
+        movimiento.setResponsable(request.getResponsable());
+
+        // Solo actualizamos la fecha si el frontend nos manda una
+        if (request.getFechaHora() != null) {
+            movimiento.setFechaHora(request.getFechaHora());
+        }
+
+        MovimientoCaja guardado = repository.save(movimiento);
+        return mapToResponseDTO(guardado);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<MovimientoCajaResponseDTO> listarTodos() {

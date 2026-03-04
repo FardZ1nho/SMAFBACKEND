@@ -149,6 +149,9 @@ public class Compra {
     @Column(name = "nombre_proveedor")
     private String nombreProveedor;
 
+    @Column(name = "ruc_proveedor", length = 20)
+    private String rucProveedor;
+
     @ManyToOne
     @JoinColumn(name = "importacion_id")
     private Importacion importacion;

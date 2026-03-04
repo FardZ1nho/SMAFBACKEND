@@ -44,10 +44,12 @@ public class CompraServiceImpl implements CompraService {
                     .orElseThrow(() -> new RuntimeException("Proveedor no encontrado ID: " + request.getProveedorId()));
             compra.setProveedor(proveedor);
             compra.setNombreProveedor(proveedor.getNombre());
+            compra.setRucProveedor(proveedor.getRuc()); // Guardamos RUC oficial
         } else {
             // Es un proveedor de texto libre
             compra.setProveedor(null);
             compra.setNombreProveedor(request.getNombreProveedor());
+            compra.setRucProveedor(request.getRucProveedor()); // ✅ Guardamos RUC Libre
         }
 
         compra.setTipoCompra(TipoCompra.valueOf(request.getTipoCompra()));
@@ -169,7 +171,7 @@ public class CompraServiceImpl implements CompraService {
                 } else {
                     // ES UN ÍTEM DE TEXTO LIBRE
                     detalle.setProducto(null);
-                    detalle.setNombreProducto(detReq.getNombreProducto());
+                    detalle.setNombreProducto(detReq.getNombreProducto()); // ✅ CORREGIDO: Se usa el getNombreProducto() del DTO
                 }
 
                 detalleRepository.save(detalle);
@@ -306,9 +308,11 @@ public class CompraServiceImpl implements CompraService {
                     .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
             compra.setProveedor(proveedor);
             compra.setNombreProveedor(proveedor.getNombre());
+            compra.setRucProveedor(proveedor.getRuc()); // Guardamos RUC oficial
         } else {
             compra.setProveedor(null);
             compra.setNombreProveedor(request.getNombreProveedor());
+            compra.setRucProveedor(request.getRucProveedor()); // ✅ Actualizamos RUC Libre
         }
 
         compra.setTipoCompra(TipoCompra.valueOf(request.getTipoCompra()));
@@ -378,7 +382,7 @@ public class CompraServiceImpl implements CompraService {
                     }
                 } else {
                     detalle.setProducto(null);
-                    detalle.setNombreProducto(detReq.getNombreProducto());
+                    detalle.setNombreProducto(detReq.getNombreProducto()); // ✅ CORREGIDO
                 }
 
                 detalleRepository.save(detalle);
@@ -446,7 +450,8 @@ public class CompraServiceImpl implements CompraService {
         } else {
             dto.setProveedorId(0);
             dto.setNombreProveedor(c.getNombreProveedor() != null ? c.getNombreProveedor() : "PROVEEDOR DE TEXTO LIBRE");
-            dto.setRucProveedor("S/D");
+            // ✅ Devuelve el RUC libre en lugar de "S/D"
+            dto.setRucProveedor(c.getRucProveedor() != null && !c.getRucProveedor().isEmpty() ? c.getRucProveedor() : "S/D");
         }
 
         dto.setMoneda(c.getMoneda());
