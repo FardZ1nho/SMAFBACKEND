@@ -6,13 +6,13 @@ import java.time.LocalDateTime;
 
 @Data
 public class PagoCompraResponseDTO {
-    // CAMBIO: Long -> Integer
     private Integer id;
-
     private BigDecimal monto;
     private String moneda;
     private String metodoPago;
     private LocalDateTime fechaPago;
     private String referencia;
-    private String nombreCuentaOrigen;
+
+    // ✅ ESTE ES EL CAMPO QUE FALTABA
+    private Integer cuentaOrigenId;
 }

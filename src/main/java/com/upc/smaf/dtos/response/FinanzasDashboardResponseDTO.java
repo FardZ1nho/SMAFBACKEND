@@ -7,33 +7,37 @@ import java.util.List;
 
 @Data
 public class FinanzasDashboardResponseDTO {
+    private BigDecimal totalIngresosEfectivos;
+    private BigDecimal totalEgresosEfectivos;
+    private BigDecimal balanceNeto;
 
-    // --- KPIs (TARJETAS SUPERIORES) ---
-    private BigDecimal totalIngresosEfectivos; // Ventas cobradas + Ingresos Caja
-    private BigDecimal totalEgresosEfectivos;  // Compras pagadas + Egresos Caja
-    private BigDecimal balanceNeto;            // Ingresos - Egresos
-
-    // --- IMPUESTOS (ESCUDO FISCAL) ---
-    private BigDecimal totalIgvPercibido;  // IGV de Ventas (Debes a SUNAT)
-    private BigDecimal totalIgvPagado;     // IGV de Compras (A favor tuyo)
-    private BigDecimal balanceIgv;         // Percibido - Pagado
+    private BigDecimal totalIgvPercibido;
+    private BigDecimal totalIgvPagado;
+    private BigDecimal balanceIgv;
 
     private BigDecimal totalRetenciones;
     private BigDecimal totalDetracciones;
     private BigDecimal totalPercepciones;
 
-    // --- LA TABLA UNIFICADA ---
     private List<TransaccionDTO> transacciones;
 
+    // ✅ ¡AQUÍ ESTÁ LA CLAVE! La etiqueta @Data debe estar aquí
     @Data
     public static class TransaccionDTO {
         private LocalDateTime fechaHora;
-        private String tipo;          // "INGRESO" o "EGRESO"
-        private String origen;        // "VENTA", "COMPRA", "CAJA_CHICA"
-        private String tipoComprobante; // "FACTURA", "BOLETA", "RECIBO", etc.
-        private String comprobante;   // Ej: "F001-002"
-        private String entidad;       // Nombre del Cliente o Proveedor
+        private String tipo;
+        private String origen;
+        private String tipoComprobante;
+        private String comprobante;
+        private String entidad;
         private String moneda;
         private BigDecimal montoTotal;
+
+        // Nuevos campos para el reporte
+        private String ruc;
+        private String descripcion;
+        private BigDecimal subTotal;
+        private BigDecimal igv;
+        private BigDecimal tipoCambio;
     }
 }

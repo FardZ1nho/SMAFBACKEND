@@ -32,7 +32,6 @@ public class FinanzasServiceImpl implements FinanzasService {
     @Override
     public FinanzasDashboardResponseDTO obtenerDashboardFinanciero(LocalDate fechaInicio, LocalDate fechaFin) {
 
-        // Si no hay fechas, tomamos un rango muy amplio (histórico)
         LocalDateTime inicio = (fechaInicio != null) ? fechaInicio.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0);
         LocalDateTime fin = (fechaFin != null) ? fechaFin.atTime(LocalTime.MAX) : LocalDateTime.now();
 
@@ -59,7 +58,6 @@ public class FinanzasServiceImpl implements FinanzasService {
             LocalDateTime fechaCompra = c.getFechaRegistro() != null ? c.getFechaRegistro() : c.getFechaEmision().atStartOfDay();
             if (fechaCompra.isBefore(inicio) || fechaCompra.isAfter(fin)) continue;
 
-            // 🟢 Normalización de Moneda (Llevar todo a Soles para el cálculo de los KPIs)
             BigDecimal tipoCambio = c.getTipoCambio() != null && c.getTipoCambio().compareTo(BigDecimal.ZERO) > 0 ? c.getTipoCambio() : new BigDecimal("3.80");
             boolean esDolar = "USD".equalsIgnoreCase(c.getMoneda());
 
@@ -83,13 +81,26 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setOrigen("COMPRA");
             tx.setTipoComprobante(c.getTipoComprobante() != null ? c.getTipoComprobante().name() : "OTRO");
             tx.setComprobante(c.getSerie() + "-" + c.getNumero());
-            tx.setEntidad(c.getNombreProveedor() != null ? c.getNombreProveedor() : (c.getProveedor() != null ? c.getProveedor().getNombre() : "Proveedor Libre"));
+
+            // ✅ EXTRAEMOS RUC Y PROVEEDOR
+            if (c.getProveedor() != null) {
+                tx.setEntidad(c.getProveedor().getNombre());
+                tx.setRuc(c.getProveedor().getRuc());
+            } else {
+                tx.setEntidad(c.getNombreProveedor() != null ? c.getNombreProveedor() : "Proveedor Libre");
+                tx.setRuc(c.getRucProveedor() != null ? c.getRucProveedor() : "S/D");
+            }
+
+            // ✅ DATOS CONTABLES PARA EL REPORTE
+            tx.setDescripcion(c.getObservaciones() != null && !c.getObservaciones().trim().isEmpty() ? c.getObservaciones() : "COMPRA DE MERCADERÍA / SERVICIOS");
             tx.setMoneda(c.getMoneda());
-            tx.setMontoTotal(orZero(c.getTotal())); // Mostramos en tabla la moneda original
+            tx.setMontoTotal(orZero(c.getTotal()));
+            tx.setSubTotal(orZero(c.getSubTotal()));
+            tx.setIgv(orZero(c.getIgv()));
+            tx.setTipoCambio(tipoCambio);
 
             transacciones.add(tx);
 
-            // Sumamos Egresos e Impuestos en SOLES
             totalEgresos = totalEgresos.add(montoNormalizado);
             igvCompras = igvCompras.add(igvNormalizado);
             retenciones = retenciones.add(retencionNormalizada);
@@ -103,13 +114,11 @@ public class FinanzasServiceImpl implements FinanzasService {
         List<Venta> ventas = ventaRepository.findAll();
 
         for (Venta v : ventas) {
-            // Verificamos por nombre para evitar error si tu Enum se llama distinto
             if (v.getEstado() != null && v.getEstado().name().equals("ANULADA")) continue;
 
             LocalDateTime fechaVenta = v.getFechaVenta() != null ? v.getFechaVenta() : LocalDateTime.now();
             if (fechaVenta.isBefore(inicio) || fechaVenta.isAfter(fin)) continue;
 
-            // 🟢 Normalización de Moneda
             BigDecimal tipoCambio = v.getTipoCambio() != null && v.getTipoCambio().compareTo(BigDecimal.ZERO) > 0 ? v.getTipoCambio() : new BigDecimal("3.80");
             boolean esDolar = "USD".equalsIgnoreCase(v.getMoneda());
 
@@ -131,13 +140,22 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setOrigen("VENTA");
             tx.setTipoComprobante(v.getTipoDocumento() != null ? v.getTipoDocumento() : "OTRO");
             tx.setComprobante(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D");
+
+            // ✅ EXTRAEMOS RUC Y CLIENTE
             tx.setEntidad(v.getNombreCliente() != null ? v.getNombreCliente() : "Cliente Libre");
+            tx.setRuc(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D"); // Asumiendo que guardaste el DNI/RUC ahí
+
+            // ✅ DATOS CONTABLES PARA EL REPORTE
+            tx.setDescripcion("VENTA DE PRODUCTOS / SERVICIOS");
             tx.setMoneda(v.getMoneda());
-            tx.setMontoTotal(orZero(v.getTotal())); // Mostramos en tabla la moneda original
+            tx.setMontoTotal(orZero(v.getTotal()));
+            // Si Venta no tiene getSubTotal(), calculamos: Total - IGV
+            tx.setSubTotal(orZero(v.getTotal()).subtract(orZero(v.getIgv())));
+            tx.setIgv(orZero(v.getIgv()));
+            tx.setTipoCambio(tipoCambio);
 
             transacciones.add(tx);
 
-            // Sumamos a KPIs
             totalIngresos = totalIngresos.add(montoNormalizado);
             igvVentas = igvVentas.add(igvNormalizado);
             retenciones = retenciones.add(retencionNormalizada);
@@ -154,17 +172,23 @@ public class FinanzasServiceImpl implements FinanzasService {
 
             FinanzasDashboardResponseDTO.TransaccionDTO tx = new FinanzasDashboardResponseDTO.TransaccionDTO();
             tx.setFechaHora(m.getFechaHora());
-            tx.setTipo(m.getTipo()); // "INGRESO" o "EGRESO"
+            tx.setTipo(m.getTipo());
             tx.setOrigen("CAJA_CHICA");
             tx.setTipoComprobante("TICKET/RECIBO");
-            tx.setComprobante(m.getMotivo());
+            tx.setComprobante("S/D");
             tx.setEntidad(m.getResponsable());
-            tx.setMoneda("PEN"); // La caja chica la manejaremos como soles por defecto
+
+            // ✅ DATOS CONTABLES
+            tx.setRuc("S/D");
+            tx.setDescripcion(m.getMotivo());
+            tx.setMoneda("PEN");
             tx.setMontoTotal(orZero(m.getMonto()));
+            tx.setSubTotal(orZero(m.getMonto())); // Sin IGV por ser caja chica
+            tx.setIgv(BigDecimal.ZERO);
+            tx.setTipoCambio(BigDecimal.ONE);
 
             transacciones.add(tx);
 
-            // Caja chica siempre suma al efectivo
             if ("INGRESO".equalsIgnoreCase(m.getTipo())) {
                 totalIngresos = totalIngresos.add(orZero(m.getMonto()));
             } else {
@@ -173,14 +197,11 @@ public class FinanzasServiceImpl implements FinanzasService {
         }
 
         // ==========================================
-        // 4. ORDENAR CRONOLÓGICAMENTE Y ARMAR RESPUESTA
+        // 4. ORDENAR Y ARMAR RESPUESTA
         // ==========================================
-        // Ordenamos la lista: Las fechas más recientes primero
         transacciones.sort(Comparator.comparing(FinanzasDashboardResponseDTO.TransaccionDTO::getFechaHora).reversed());
 
         dashboard.setTransacciones(transacciones);
-
-        // Guardamos KPIs con redondeo a 2 decimales para que el Frontend no explote
         dashboard.setTotalIngresosEfectivos(totalIngresos.setScale(2, RoundingMode.HALF_UP));
         dashboard.setTotalEgresosEfectivos(totalEgresos.setScale(2, RoundingMode.HALF_UP));
         dashboard.setBalanceNeto(totalIngresos.subtract(totalEgresos).setScale(2, RoundingMode.HALF_UP));
@@ -196,7 +217,6 @@ public class FinanzasServiceImpl implements FinanzasService {
         return dashboard;
     }
 
-    // Helper para evitar problemas con nulos
     private BigDecimal orZero(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
     }

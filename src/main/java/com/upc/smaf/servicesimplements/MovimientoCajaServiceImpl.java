@@ -28,17 +28,23 @@ public class MovimientoCajaServiceImpl implements MovimientoCajaService {
         movimiento.setMotivo(request.getMotivo());
         movimiento.setResponsable(request.getResponsable());
 
-        // Si el frontend no manda fecha, usamos la actual
         movimiento.setFechaHora(request.getFechaHora() != null ? request.getFechaHora() : LocalDateTime.now());
 
         MovimientoCaja guardado = repository.save(movimiento);
         return mapToResponseDTO(guardado);
     }
 
-    // ✅ NUEVO MÉTODO PARA ACTUALIZAR
+    // ✅ CORREGIDO: Ahora usa Integer
+    @Override
+    @Transactional
+    public void eliminarMovimiento(Integer id) {
+        repository.deleteById(id);
+    }
+
     @Override
     @Transactional
     public MovimientoCajaResponseDTO actualizarMovimiento(Integer id, MovimientoCajaRequestDTO request) {
+        // ✅ CORREGIDO: Ya no necesitamos convertir a Long, usamos el Integer directo
         MovimientoCaja movimiento = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Movimiento de caja no encontrado con ID: " + id));
 
@@ -47,7 +53,6 @@ public class MovimientoCajaServiceImpl implements MovimientoCajaService {
         movimiento.setMotivo(request.getMotivo());
         movimiento.setResponsable(request.getResponsable());
 
-        // Solo actualizamos la fecha si el frontend nos manda una
         if (request.getFechaHora() != null) {
             movimiento.setFechaHora(request.getFechaHora());
         }
@@ -64,7 +69,6 @@ public class MovimientoCajaServiceImpl implements MovimientoCajaService {
                 .collect(Collectors.toList());
     }
 
-    // Helper para convertir
     private MovimientoCajaResponseDTO mapToResponseDTO(MovimientoCaja entidad) {
         MovimientoCajaResponseDTO dto = new MovimientoCajaResponseDTO();
         dto.setId(entidad.getId());

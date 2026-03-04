@@ -8,4 +8,7 @@ public interface MovimientoCajaService {
     MovimientoCajaResponseDTO registrarMovimiento(MovimientoCajaRequestDTO request);
     List<MovimientoCajaResponseDTO> listarTodos();
     MovimientoCajaResponseDTO actualizarMovimiento(Integer id, MovimientoCajaRequestDTO request);
+
+    // ✅ CORREGIDO: Ahora usa Integer para que coincida con tu BD
+    void eliminarMovimiento(Integer id);
 }

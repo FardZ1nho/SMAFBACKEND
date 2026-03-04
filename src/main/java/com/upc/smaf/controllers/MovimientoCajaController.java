@@ -17,7 +17,6 @@ import java.util.List;
 public class MovimientoCajaController {
 
     private final MovimientoCajaService service;
-    private final MovimientoCajaService movimientoCajaService;
 
     @PostMapping
     public ResponseEntity<MovimientoCajaResponseDTO> registrar(@RequestBody MovimientoCajaRequestDTO request) {
@@ -33,7 +32,14 @@ public class MovimientoCajaController {
     public ResponseEntity<MovimientoCajaResponseDTO> actualizarMovimiento(
             @PathVariable Integer id,
             @Valid @RequestBody MovimientoCajaRequestDTO request) {
-        MovimientoCajaResponseDTO actualizado = movimientoCajaService.actualizarMovimiento(id, request);
+        MovimientoCajaResponseDTO actualizado = service.actualizarMovimiento(id, request);
         return ResponseEntity.ok(actualizado);
+    }
+
+    // ✅ CORREGIDO: Ahora recibe un Integer en la URL
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminarMovimiento(@PathVariable Integer id) {
+        service.eliminarMovimiento(id);
+        return ResponseEntity.noContent().build();
     }
 }

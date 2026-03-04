@@ -44,12 +44,11 @@ public class CompraServiceImpl implements CompraService {
                     .orElseThrow(() -> new RuntimeException("Proveedor no encontrado ID: " + request.getProveedorId()));
             compra.setProveedor(proveedor);
             compra.setNombreProveedor(proveedor.getNombre());
-            compra.setRucProveedor(proveedor.getRuc()); // Guardamos RUC oficial
+            compra.setRucProveedor(proveedor.getRuc());
         } else {
-            // Es un proveedor de texto libre
             compra.setProveedor(null);
             compra.setNombreProveedor(request.getNombreProveedor());
-            compra.setRucProveedor(request.getRucProveedor()); // ✅ Guardamos RUC Libre
+            compra.setRucProveedor(request.getRucProveedor());
         }
 
         compra.setTipoCompra(TipoCompra.valueOf(request.getTipoCompra()));
@@ -137,7 +136,7 @@ public class CompraServiceImpl implements CompraService {
         Compra savedCompra = compraRepository.save(compra);
 
         // ====================================================
-        // 5. DETALLES DE PRODUCTOS (BD o Libres)
+        // 5. DETALLES DE PRODUCTOS
         // ====================================================
         if (request.getDetalles() != null) {
             for (CompraRequestDTO.DetalleRequestDTO detReq : request.getDetalles()) {
@@ -169,9 +168,8 @@ public class CompraServiceImpl implements CompraService {
                         productoRepository.save(producto);
                     }
                 } else {
-                    // ES UN ÍTEM DE TEXTO LIBRE
                     detalle.setProducto(null);
-                    detalle.setNombreProducto(detReq.getNombreProducto()); // ✅ CORREGIDO: Se usa el getNombreProducto() del DTO
+                    detalle.setNombreProducto(detReq.getNombreProducto());
                 }
 
                 detalleRepository.save(detalle);
@@ -288,6 +286,7 @@ public class CompraServiceImpl implements CompraService {
             throw new RuntimeException("No se puede editar una compra ANULADA");
         }
 
+        // Revertir stock previo
         if (compra.getTipoCompra() == TipoCompra.BIEN && compra.getTipoComprobante() != TipoComprobante.FACTURA_COMERCIAL) {
             for (CompraDetalle detalleViejo : compra.getDetalles()) {
                 if (detalleViejo.getProducto() != null) {
@@ -302,17 +301,17 @@ public class CompraServiceImpl implements CompraService {
         detalleRepository.deleteAll(compra.getDetalles());
         compra.getDetalles().clear();
 
-        // 4. ACTUALIZAR PROVEEDOR
+        // ACTUALIZAR PROVEEDOR
         if (request.getProveedorId() != null) {
             Proveedor proveedor = proveedorRepository.findById(request.getProveedorId())
                     .orElseThrow(() -> new RuntimeException("Proveedor no encontrado"));
             compra.setProveedor(proveedor);
             compra.setNombreProveedor(proveedor.getNombre());
-            compra.setRucProveedor(proveedor.getRuc()); // Guardamos RUC oficial
+            compra.setRucProveedor(proveedor.getRuc());
         } else {
             compra.setProveedor(null);
             compra.setNombreProveedor(request.getNombreProveedor());
-            compra.setRucProveedor(request.getRucProveedor()); // ✅ Actualizamos RUC Libre
+            compra.setRucProveedor(request.getRucProveedor());
         }
 
         compra.setTipoCompra(TipoCompra.valueOf(request.getTipoCompra()));
@@ -382,14 +381,62 @@ public class CompraServiceImpl implements CompraService {
                     }
                 } else {
                     detalle.setProducto(null);
-                    detalle.setNombreProducto(detReq.getNombreProducto()); // ✅ CORREGIDO
+                    detalle.setNombreProducto(detReq.getNombreProducto());
                 }
 
                 detalleRepository.save(detalle);
             }
         }
 
-        BigDecimal totalPagado = compra.getMontoPagadoInicial();
+        // ====================================================
+        // ✅ SOLUCIÓN AL PROBLEMA: ACTUALIZAR PAGOS Y CUENTAS BANCARIAS
+        // ====================================================
+        if (request.getPagos() != null && !request.getPagos().isEmpty()) {
+            CompraRequestDTO.PagoCompraRequestDTO pagoDTO = request.getPagos().get(0);
+            PagoCompra pagoInicial;
+
+            // Si la compra no tenía pagos, creamos uno nuevo
+            if (compra.getPagos().isEmpty()) {
+                pagoInicial = new PagoCompra();
+                pagoInicial.setFechaPago(LocalDateTime.now());
+                compra.agregarPago(pagoInicial);
+            } else {
+                // Si ya tenía pagos, actualizamos el primero (el pago inicial)
+                pagoInicial = compra.getPagos().get(0);
+            }
+
+            pagoInicial.setMonto(pagoDTO.getMonto());
+            pagoInicial.setMoneda(pagoDTO.getMoneda());
+            pagoInicial.setMetodoPago(pagoDTO.getMetodoPago());
+            pagoInicial.setReferencia(pagoDTO.getReferencia());
+
+            // Asignar el banco o cuenta seleccionada
+            if (pagoDTO.getCuentaOrigenId() != null) {
+                pagoInicial.setCuentaOrigen(cuentaRepository.findById(pagoDTO.getCuentaOrigenId()).orElse(null));
+            } else {
+                pagoInicial.setCuentaOrigen(null);
+            }
+
+            // Recalculamos el inicial normalizado (en caso de que haya moneda extranjera)
+            BigDecimal montoNorm = pagoInicial.getMonto();
+            if(!pagoInicial.getMoneda().equals(compra.getMoneda()) && compra.getTipoCambio() != null) {
+                if ("USD".equals(pagoInicial.getMoneda())) {
+                    montoNorm = montoNorm.multiply(compra.getTipoCambio());
+                } else if ("USD".equals(compra.getMoneda())) {
+                    montoNorm = montoNorm.divide(compra.getTipoCambio(), 2, RoundingMode.HALF_UP);
+                }
+            }
+            compra.setMontoPagadoInicial(montoNorm);
+
+        } else if (compra.getTipoPago() == TipoPago.CREDITO && !compra.getPagos().isEmpty()) {
+            // Si el usuario cambió a Crédito y borró el monto inicial, lo limpiamos
+            PagoCompra pagoInicial = compra.getPagos().get(0);
+            pagoInicial.setMonto(BigDecimal.ZERO);
+            compra.setMontoPagadoInicial(BigDecimal.ZERO);
+        }
+
+        // 6. CALCULAR SALDO Y ESTADO FINAL
+        BigDecimal totalPagado = BigDecimal.ZERO;
         if(compra.getPagos() != null) {
             totalPagado = compra.getPagos().stream().map(PagoCompra::getMonto).reduce(BigDecimal.ZERO, BigDecimal::add);
         }
@@ -399,6 +446,7 @@ public class CompraServiceImpl implements CompraService {
 
         Compra compraGuardada = compraRepository.save(compra);
 
+        // Actualizar importación si aplica
         if (compraGuardada.getImportacion() != null) {
             actualizarTotalesImportacion(compraGuardada.getImportacion());
         }
@@ -442,7 +490,6 @@ public class CompraServiceImpl implements CompraService {
         dto.setFechaEmision(c.getFechaEmision());
         dto.setEstado(c.getEstado() != null ? c.getEstado().name() : "PENDIENTE");
 
-        // ✅ MAPEO SEGURO DEL PROVEEDOR
         if (c.getProveedor() != null) {
             dto.setProveedorId(c.getProveedor().getId());
             dto.setNombreProveedor(c.getProveedor().getNombre());
@@ -450,7 +497,6 @@ public class CompraServiceImpl implements CompraService {
         } else {
             dto.setProveedorId(0);
             dto.setNombreProveedor(c.getNombreProveedor() != null ? c.getNombreProveedor() : "PROVEEDOR DE TEXTO LIBRE");
-            // ✅ Devuelve el RUC libre en lugar de "S/D"
             dto.setRucProveedor(c.getRucProveedor() != null && !c.getRucProveedor().isEmpty() ? c.getRucProveedor() : "S/D");
         }
 
@@ -525,6 +571,10 @@ public class CompraServiceImpl implements CompraService {
                 pago.setMetodoPago(p.getMetodoPago() != null ? p.getMetodoPago().name() : null);
                 pago.setFechaPago(p.getFechaPago());
                 pago.setReferencia(p.getReferencia());
+                // ✅ MAPEAMOS EL ID DE LA CUENTA BANCARIA PARA EL FRONTEND
+                if (p.getCuentaOrigen() != null) {
+                    pago.setCuentaOrigenId(p.getCuentaOrigen().getId());
+                }
                 return pago;
             }).collect(Collectors.toList());
 
