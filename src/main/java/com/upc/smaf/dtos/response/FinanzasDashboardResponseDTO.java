@@ -21,7 +21,6 @@ public class FinanzasDashboardResponseDTO {
 
     private List<TransaccionDTO> transacciones;
 
-    // ✅ ¡AQUÍ ESTÁ LA CLAVE! La etiqueta @Data debe estar aquí
     @Data
     public static class TransaccionDTO {
         private LocalDateTime fechaHora;
@@ -33,11 +32,16 @@ public class FinanzasDashboardResponseDTO {
         private String moneda;
         private BigDecimal montoTotal;
 
-        // Nuevos campos para el reporte
+        // Campos para el reporte
         private String ruc;
         private String descripcion;
         private BigDecimal subTotal;
         private BigDecimal igv;
         private BigDecimal tipoCambio;
+
+        // ✅ NUEVOS CAMPOS AGREGADOS: Impuestos adicionales
+        private BigDecimal retencion;
+        private BigDecimal detraccion;
+        private BigDecimal percepcion;
     }
 }

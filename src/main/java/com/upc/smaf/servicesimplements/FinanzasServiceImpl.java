@@ -55,7 +55,8 @@ public class FinanzasServiceImpl implements FinanzasService {
         for (Compra c : compras) {
             if (c.getEstado() == EstadoCompra.ANULADA) continue;
 
-            LocalDateTime fechaCompra = c.getFechaRegistro() != null ? c.getFechaRegistro() : c.getFechaEmision().atStartOfDay();
+            // ✅ CORRECCIÓN: Usar estrictamente la Fecha de Emisión de la Factura
+            LocalDateTime fechaCompra = c.getFechaEmision() != null ? c.getFechaEmision().atStartOfDay() : (c.getFechaRegistro() != null ? c.getFechaRegistro() : LocalDateTime.now());
             if (fechaCompra.isBefore(inicio) || fechaCompra.isAfter(fin)) continue;
 
             BigDecimal tipoCambio = c.getTipoCambio() != null && c.getTipoCambio().compareTo(BigDecimal.ZERO) > 0 ? c.getTipoCambio() : new BigDecimal("3.80");
@@ -82,7 +83,6 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setTipoComprobante(c.getTipoComprobante() != null ? c.getTipoComprobante().name() : "OTRO");
             tx.setComprobante(c.getSerie() + "-" + c.getNumero());
 
-            // ✅ EXTRAEMOS RUC Y PROVEEDOR
             if (c.getProveedor() != null) {
                 tx.setEntidad(c.getProveedor().getNombre());
                 tx.setRuc(c.getProveedor().getRuc());
@@ -91,13 +91,17 @@ public class FinanzasServiceImpl implements FinanzasService {
                 tx.setRuc(c.getRucProveedor() != null ? c.getRucProveedor() : "S/D");
             }
 
-            // ✅ DATOS CONTABLES PARA EL REPORTE
             tx.setDescripcion(c.getObservaciones() != null && !c.getObservaciones().trim().isEmpty() ? c.getObservaciones() : "COMPRA DE MERCADERÍA / SERVICIOS");
             tx.setMoneda(c.getMoneda());
             tx.setMontoTotal(orZero(c.getTotal()));
             tx.setSubTotal(orZero(c.getSubTotal()));
             tx.setIgv(orZero(c.getIgv()));
             tx.setTipoCambio(tipoCambio);
+
+            // ✅ AGREGANDO LOS NUEVOS CAMPOS
+            tx.setRetencion(orZero(c.getRetencion()));
+            tx.setDetraccion(orZero(c.getDetraccionMonto()));
+            tx.setPercepcion(orZero(c.getPercepcion()));
 
             transacciones.add(tx);
 
@@ -116,6 +120,7 @@ public class FinanzasServiceImpl implements FinanzasService {
         for (Venta v : ventas) {
             if (v.getEstado() != null && v.getEstado().name().equals("ANULADA")) continue;
 
+            // ✅ CORRECCIÓN: Usar la fecha registrada en la Venta (asumiendo getFechaVenta como la fecha del documento)
             LocalDateTime fechaVenta = v.getFechaVenta() != null ? v.getFechaVenta() : LocalDateTime.now();
             if (fechaVenta.isBefore(inicio) || fechaVenta.isAfter(fin)) continue;
 
@@ -141,18 +146,20 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setTipoComprobante(v.getTipoDocumento() != null ? v.getTipoDocumento() : "OTRO");
             tx.setComprobante(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D");
 
-            // ✅ EXTRAEMOS RUC Y CLIENTE
             tx.setEntidad(v.getNombreCliente() != null ? v.getNombreCliente() : "Cliente Libre");
-            tx.setRuc(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D"); // Asumiendo que guardaste el DNI/RUC ahí
+            tx.setRuc(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D");
 
-            // ✅ DATOS CONTABLES PARA EL REPORTE
             tx.setDescripcion("VENTA DE PRODUCTOS / SERVICIOS");
             tx.setMoneda(v.getMoneda());
             tx.setMontoTotal(orZero(v.getTotal()));
-            // Si Venta no tiene getSubTotal(), calculamos: Total - IGV
             tx.setSubTotal(orZero(v.getTotal()).subtract(orZero(v.getIgv())));
             tx.setIgv(orZero(v.getIgv()));
             tx.setTipoCambio(tipoCambio);
+
+            // ✅ AGREGANDO LOS NUEVOS CAMPOS (Venta no tiene Percepción en tu modelo actual, va en 0)
+            tx.setRetencion(orZero(v.getRetencion()));
+            tx.setDetraccion(orZero(v.getDetraccion()));
+            tx.setPercepcion(BigDecimal.ZERO);
 
             transacciones.add(tx);
 
@@ -178,14 +185,18 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setComprobante("S/D");
             tx.setEntidad(m.getResponsable());
 
-            // ✅ DATOS CONTABLES
             tx.setRuc("S/D");
             tx.setDescripcion(m.getMotivo());
             tx.setMoneda("PEN");
             tx.setMontoTotal(orZero(m.getMonto()));
-            tx.setSubTotal(orZero(m.getMonto())); // Sin IGV por ser caja chica
+            tx.setSubTotal(orZero(m.getMonto()));
             tx.setIgv(BigDecimal.ZERO);
             tx.setTipoCambio(BigDecimal.ONE);
+
+            // ✅ AGREGANDO LOS NUEVOS CAMPOS
+            tx.setRetencion(BigDecimal.ZERO);
+            tx.setDetraccion(BigDecimal.ZERO);
+            tx.setPercepcion(BigDecimal.ZERO);
 
             transacciones.add(tx);
 

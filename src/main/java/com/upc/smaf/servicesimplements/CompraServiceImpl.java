@@ -76,19 +76,24 @@ public class CompraServiceImpl implements CompraService {
         compra.setDetraccionMonto(request.getDetraccionMonto());
         compra.setRetencion(request.getRetencion());
 
-        // 3. LÓGICA DE IMPORTACIÓN
-        compra.setCodImportacion(request.getCodImportacion());
+        // ====================================================
+        // 3. LÓGICA DE IMPORTACIÓN (VACUNA ANTI CARPETAS FANTASMA)
+        // ====================================================
+        String codImpLimpio = request.getCodImportacion() != null && !request.getCodImportacion().trim().isEmpty()
+                ? request.getCodImportacion().trim() : null;
+
+        compra.setCodImportacion(codImpLimpio);
         compra.setPesoNetoKg(request.getPesoNetoKg() != null ? request.getPesoNetoKg() : BigDecimal.ZERO);
         compra.setCbm(request.getCbm() != null ? request.getCbm() : BigDecimal.ZERO);
 
-        if (request.getCodImportacion() != null && !request.getCodImportacion().trim().isEmpty()) {
-            Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(request.getCodImportacion());
+        if (codImpLimpio != null) {
+            Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(codImpLimpio);
 
             if (importacionOpt.isPresent()) {
                 compra.setImportacion(importacionOpt.get());
             } else {
                 Importacion nuevaImp = new Importacion();
-                nuevaImp.setCodigoAgrupador(request.getCodImportacion());
+                nuevaImp.setCodigoAgrupador(codImpLimpio);
                 nuevaImp.setEstado(EstadoImportacion.ORDENADO);
                 nuevaImp.setSumaFobTotal(BigDecimal.ZERO);
                 nuevaImp.setPesoTotalKg(BigDecimal.ZERO);
@@ -332,22 +337,30 @@ public class CompraServiceImpl implements CompraService {
         compra.setPercepcion(request.getPercepcion() != null ? request.getPercepcion() : BigDecimal.ZERO);
         compra.setRetencion(request.getRetencion());
 
+        // ====================================================
+        // ✅ CORRECCIÓN PRINCIPAL PARA EVITAR CARPETAS FANTASMAS AL EDITAR
+        // ====================================================
         String codImportacionAnterior = compra.getCodImportacion();
-        compra.setCodImportacion(request.getCodImportacion());
+        String nuevoCodImpLimpio = request.getCodImportacion() != null && !request.getCodImportacion().trim().isEmpty()
+                ? request.getCodImportacion().trim() : null;
+
+        compra.setCodImportacion(nuevoCodImpLimpio);
         compra.setPesoNetoKg(request.getPesoNetoKg());
         compra.setCbm(request.getCbm());
 
-        if (request.getCodImportacion() != null && !request.getCodImportacion().equals(codImportacionAnterior)) {
-            Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(request.getCodImportacion());
+        if (nuevoCodImpLimpio != null && !nuevoCodImpLimpio.equals(codImportacionAnterior)) {
+            Optional<Importacion> importacionOpt = importacionRepository.findByCodigoAgrupador(nuevoCodImpLimpio);
             if (importacionOpt.isPresent()) {
                 compra.setImportacion(importacionOpt.get());
             } else {
                 Importacion nuevaImp = new Importacion();
-                nuevaImp.setCodigoAgrupador(request.getCodImportacion());
+                nuevaImp.setCodigoAgrupador(nuevoCodImpLimpio);
                 nuevaImp.setEstado(EstadoImportacion.ORDENADO);
                 nuevaImp.setSumaFobTotal(BigDecimal.ZERO);
                 compra.setImportacion(importacionRepository.save(nuevaImp));
             }
+        } else if (nuevoCodImpLimpio == null) {
+            compra.setImportacion(null); // Desvincula la importación si la factura es local
         }
 
         if (request.getDetalles() != null) {
@@ -450,7 +463,9 @@ public class CompraServiceImpl implements CompraService {
         if (compraGuardada.getImportacion() != null) {
             actualizarTotalesImportacion(compraGuardada.getImportacion());
         }
-        if (codImportacionAnterior != null && !codImportacionAnterior.equals(request.getCodImportacion())) {
+
+        // Desvincular de la importación anterior si se cambió
+        if (codImportacionAnterior != null && !codImportacionAnterior.equals(nuevoCodImpLimpio)) {
             importacionRepository.findByCodigoAgrupador(codImportacionAnterior)
                     .ifPresent(this::actualizarTotalesImportacion);
         }
