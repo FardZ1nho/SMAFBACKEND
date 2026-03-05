@@ -23,7 +23,6 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -37,6 +36,10 @@ public class DashboardServiceImpl implements DashboardService {
     private final ProductoRepository productoRepository;
     private final VentaRepository ventaRepository;
     private final ClienteRepository clienteRepository;
+
+    // ✅ NUEVAS DEPENDENCIAS PARA ALERTAS Y CAJA
+    private final TurnoCajaRepository turnoCajaRepository;
+    private final CotizacionRepository cotizacionRepository;
 
     // ==========================================
     // 1. MÉTRICAS GENERALES
@@ -56,8 +59,8 @@ public class DashboardServiceImpl implements DashboardService {
         BigDecimal ventasMes = ventaRepository.sumarVentasCompletadasEntreFechas(inicioMes, finMes);
         BigDecimal ventasMesAnt = ventaRepository.sumarVentasCompletadasEntreFechas(inicioMesAnt, finMesAnt);
 
-        dashboard.setVentasHoy(ventasHoy);
-        dashboard.setVentasMes(ventasMes);
+        dashboard.setVentasHoy(ventasHoy != null ? ventasHoy : BigDecimal.ZERO);
+        dashboard.setVentasMes(ventasMes != null ? ventasMes : BigDecimal.ZERO);
 
         Integer cantVentasHoy = ventaRepository.contarVentasCompletadasEntreFechas(inicioHoy, finHoy);
         Integer cantVentasMes = ventaRepository.contarVentasCompletadasEntreFechas(inicioMes, finMes);
@@ -81,6 +84,44 @@ public class DashboardServiceImpl implements DashboardService {
         dashboard.setPorcentajeCambioClientes(0.0);
         dashboard.setPorcentajeCambioProductos(0.0);
         dashboard.setPorcentajeCambioVentasHoy(0.0);
+
+        // ✅ NUEVO: Calcular Alertas y Tareas
+        dashboard.setProductosStockBajo(obtenerProductosStockBajo());
+
+        try {
+            int cotiPendientes = (int) cotizacionRepository.findAll().stream()
+                    .filter(c -> "EN_NEGOCIACION".equals(c.getEstado()))
+                    .count();
+            dashboard.setCotizacionesPendientes(cotiPendientes);
+        } catch (Exception e) {
+            dashboard.setCotizacionesPendientes(0);
+        }
+
+        dashboard.setComprasPorPagar(0); // Placeholder hasta tener el módulo de cuentas por pagar listo
+
+        // ✅ NUEVO: Calcular Efectivo en Caja Chica
+        BigDecimal saldoCaja = BigDecimal.ZERO;
+        try {
+            var turnoOpt = turnoCajaRepository.findByEstado("ABIERTO");
+            if (turnoOpt.isPresent()) {
+                var turno = turnoOpt.get();
+                BigDecimal ingresos = turno.getMovimientos().stream()
+                        .filter(m -> "INGRESO".equals(m.getTipo()))
+                        .map(m -> m.getMonto() != null ? m.getMonto() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal egresos = turno.getMovimientos().stream()
+                        .filter(m -> "EGRESO".equals(m.getTipo()))
+                        .map(m -> m.getMonto() != null ? m.getMonto() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                saldoCaja = turno.getSaldoInicial().add(ingresos).subtract(egresos);
+            }
+        } catch (Exception e) {
+            System.err.println("Error calculando saldo de caja: " + e.getMessage());
+        }
+        dashboard.setSaldoCajaChica(saldoCaja);
+        dashboard.setSaldoBancos(BigDecimal.ZERO); // Placeholder para futura conexión
 
         return dashboard;
     }
@@ -128,7 +169,6 @@ public class DashboardServiceImpl implements DashboardService {
         List<GraficoVentasDTO> grafico = new ArrayList<>();
 
         if ("SEMANA".equalsIgnoreCase(periodo)) {
-            // Lunes de esta semana
             LocalDate hoy = LocalDate.now();
             LocalDate lunesEstaSemana = hoy.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 
@@ -223,7 +263,7 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     // ==========================================
-    // 4. IMPORTACIONES (CORREGIDO: Muestra aunque no tenga fecha)
+    // 4. IMPORTACIONES
     // ==========================================
     @Override
     public List<DashboardAlertaDTO> obtenerProximasLlegadas() {
@@ -273,24 +313,21 @@ public class DashboardServiceImpl implements DashboardService {
     @Override
     public Integer obtenerProductosStockBajo() {
         return (int) productoRepository.findAll().stream()
-                .filter(p -> (p.getStockActual() == null ? 0 : p.getStockActual()) < 5)
+                .filter(p -> (p.getStockActual() == null ? 0 : p.getStockActual()) < (p.getStockMinimo() != null ? p.getStockMinimo() : 5))
                 .count();
     }
 
     // ==========================================
-    // 🏆 5. PRODUCTOS MÁS VENDIDOS (CORREGIDO)
+    // 5. PRODUCTOS MÁS VENDIDOS
     // ==========================================
     @Override
     public List<ProductoVendidoDTO> obtenerProductosMasVendidos(int limit) {
-        // Pedimos los 'limit' (ej: 5) productos con más ventas
         Pageable pageable = PageRequest.of(0, limit);
-
-        // Llamada a la query que agregamos en VentaRepository
         List<Object[]> resultados = ventaRepository.obtenerTopProductos(pageable);
 
         return resultados.stream().map(fila -> {
             String nombre = (String) fila[0];
-            Number cantidad = (Number) fila[1]; // Evita error Long/Integer
+            Number cantidad = (Number) fila[1];
             BigDecimal total = (BigDecimal) fila[2];
 
             ProductoVendidoDTO dto = new ProductoVendidoDTO();
