@@ -96,6 +96,9 @@ public class WebSecurityConfig {
                         .requestMatchers("/compras/**").permitAll()
                         .requestMatchers("/importaciones/**").permitAll()
 
+                        // ⭐ AQUÍ ESTÁ LA MAGIA: Permitimos la nueva ruta de SUNAT/RENIEC
+                        .requestMatchers("/api/consultas/**").permitAll()
+
                         // Si quieres que las tareas sean públicas sin requerir token en absoluto,
                         // descomenta la siguiente línea. Si prefieres que SÍ requieran estar logueado, déjalo así.
                         // .requestMatchers("/tareascrm/**").permitAll()
