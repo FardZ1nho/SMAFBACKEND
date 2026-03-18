@@ -114,7 +114,7 @@ public class VentaServiceImpl implements VentaService {
 
         venta.setMontoInicial(totalPagadoNormalizado);
 
-        // ✅ Lo que el cliente REALMENTE DEBE PAGAR es el Total menos la Retención y Detracción
+        // Lo que el cliente REALMENTE DEBE PAGAR es el Total menos la Retención y Detracción
         BigDecimal montoRealAPagar = totalVenta.subtract(venta.getRetencion()).subtract(venta.getDetraccion());
 
         if (venta.getTipoPago() == TipoPago.CONTADO) {
@@ -185,6 +185,11 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
+        // ✅ CORRECCIÓN EXTRA: Guardar comprobante y cuotas al crear el borrador
+        venta.setTipoDocumento(request.getTipoDocumento());
+        venta.setNumeroDocumento(request.getNumeroDocumento());
+        venta.setNumeroCuotas(request.getNumeroCuotas());
+
         venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
         venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
 
@@ -250,6 +255,11 @@ public class VentaServiceImpl implements VentaService {
         venta.setMoneda(request.getMoneda());
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
+
+        // ✅ CORRECCIÓN PRINCIPAL: Actualizar comprobante y cuotas
+        venta.setTipoDocumento(request.getTipoDocumento());
+        venta.setNumeroDocumento(request.getNumeroDocumento());
+        venta.setNumeroCuotas(request.getNumeroCuotas());
 
         venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
         venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
@@ -476,7 +486,6 @@ public class VentaServiceImpl implements VentaService {
         dto.setEstado(venta.getEstado());
         dto.setTipoPago(venta.getTipoPago());
 
-        // ✅ AGREGADO: Mapeo de Documento y Moneda
         dto.setTipoDocumento(venta.getTipoDocumento());
         dto.setNumeroDocumento(venta.getNumeroDocumento());
         dto.setMoneda(venta.getMoneda());
