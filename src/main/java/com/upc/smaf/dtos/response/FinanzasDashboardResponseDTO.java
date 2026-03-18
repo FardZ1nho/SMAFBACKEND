@@ -43,5 +43,6 @@ public class FinanzasDashboardResponseDTO {
         private BigDecimal retencion;
         private BigDecimal detraccion;
         private BigDecimal percepcion;
+        private String estado;
     }
 }

@@ -53,9 +53,8 @@ public class FinanzasServiceImpl implements FinanzasService {
         List<Compra> compras = compraRepository.findAll();
 
         for (Compra c : compras) {
-            if (c.getEstado() == EstadoCompra.ANULADA) continue;
+            // ✅ CORRECCIÓN 1: Quitamos el "continue" de ANULADA para que sí viaje al frontend.
 
-            // ✅ CORRECCIÓN: Usar estrictamente la Fecha de Emisión de la Factura
             LocalDateTime fechaCompra = c.getFechaEmision() != null ? c.getFechaEmision().atStartOfDay() : (c.getFechaRegistro() != null ? c.getFechaRegistro() : LocalDateTime.now());
             if (fechaCompra.isBefore(inicio) || fechaCompra.isAfter(fin)) continue;
 
@@ -76,12 +75,15 @@ public class FinanzasServiceImpl implements FinanzasService {
                 percepcionNormalizada = percepcionNormalizada.multiply(tipoCambio);
             }
 
+            String estadoActual = c.getEstado() != null ? c.getEstado().name() : "REGISTRADA";
+
             FinanzasDashboardResponseDTO.TransaccionDTO tx = new FinanzasDashboardResponseDTO.TransaccionDTO();
             tx.setFechaHora(fechaCompra);
             tx.setTipo("EGRESO");
             tx.setOrigen("COMPRA");
             tx.setTipoComprobante(c.getTipoComprobante() != null ? c.getTipoComprobante().name() : "OTRO");
             tx.setComprobante(c.getSerie() + "-" + c.getNumero());
+            tx.setEstado(estadoActual); // ✅ CORRECCIÓN 2: Enviamos el estado al frontend
 
             if (c.getProveedor() != null) {
                 tx.setEntidad(c.getProveedor().getNombre());
@@ -97,19 +99,20 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setSubTotal(orZero(c.getSubTotal()));
             tx.setIgv(orZero(c.getIgv()));
             tx.setTipoCambio(tipoCambio);
-
-            // ✅ AGREGANDO LOS NUEVOS CAMPOS
             tx.setRetencion(orZero(c.getRetencion()));
             tx.setDetraccion(orZero(c.getDetraccionMonto()));
             tx.setPercepcion(orZero(c.getPercepcion()));
 
             transacciones.add(tx);
 
-            totalEgresos = totalEgresos.add(montoNormalizado);
-            igvCompras = igvCompras.add(igvNormalizado);
-            retenciones = retenciones.add(retencionNormalizada);
-            detracciones = detracciones.add(detraccionNormalizada);
-            percepciones = percepciones.add(percepcionNormalizada);
+            // ✅ CORRECCIÓN 3: El backend solo suma si la compra es VÁLIDA
+            if (!estadoActual.equals("ANULADA") && !estadoActual.equals("CANCELADA")) {
+                totalEgresos = totalEgresos.add(montoNormalizado);
+                igvCompras = igvCompras.add(igvNormalizado);
+                retenciones = retenciones.add(retencionNormalizada);
+                detracciones = detracciones.add(detraccionNormalizada);
+                percepciones = percepciones.add(percepcionNormalizada);
+            }
         }
 
         // ==========================================
@@ -118,9 +121,11 @@ public class FinanzasServiceImpl implements FinanzasService {
         List<Venta> ventas = ventaRepository.findAll();
 
         for (Venta v : ventas) {
-            if (v.getEstado() != null && v.getEstado().name().equals("ANULADA")) continue;
+            String estadoActual = v.getEstado() != null ? v.getEstado().name() : "COMPLETADA";
 
-            // ✅ CORRECCIÓN: Usar la fecha registrada en la Venta (asumiendo getFechaVenta como la fecha del documento)
+            // Un borrador NO es una venta real para SUNAT, lo ignoramos por completo
+            if (estadoActual.equals("BORRADOR")) continue;
+
             LocalDateTime fechaVenta = v.getFechaVenta() != null ? v.getFechaVenta() : LocalDateTime.now();
             if (fechaVenta.isBefore(inicio) || fechaVenta.isAfter(fin)) continue;
 
@@ -145,6 +150,7 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setOrigen("VENTA");
             tx.setTipoComprobante(v.getTipoDocumento() != null ? v.getTipoDocumento() : "OTRO");
             tx.setComprobante(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D");
+            tx.setEstado(estadoActual); // ✅ CORRECCIÓN 2: Enviamos el estado al frontend
 
             tx.setEntidad(v.getNombreCliente() != null ? v.getNombreCliente() : "Cliente Libre");
             tx.setRuc(v.getNumeroDocumento() != null ? v.getNumeroDocumento() : "S/D");
@@ -155,18 +161,19 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setSubTotal(orZero(v.getTotal()).subtract(orZero(v.getIgv())));
             tx.setIgv(orZero(v.getIgv()));
             tx.setTipoCambio(tipoCambio);
-
-            // ✅ AGREGANDO LOS NUEVOS CAMPOS (Venta no tiene Percepción en tu modelo actual, va en 0)
             tx.setRetencion(orZero(v.getRetencion()));
             tx.setDetraccion(orZero(v.getDetraccion()));
             tx.setPercepcion(BigDecimal.ZERO);
 
             transacciones.add(tx);
 
-            totalIngresos = totalIngresos.add(montoNormalizado);
-            igvVentas = igvVentas.add(igvNormalizado);
-            retenciones = retenciones.add(retencionNormalizada);
-            detracciones = detracciones.add(detraccionNormalizada);
+            // ✅ CORRECCIÓN 3: El backend solo suma si la venta es VÁLIDA
+            if (!estadoActual.equals("ANULADA") && !estadoActual.equals("CANCELADA")) {
+                totalIngresos = totalIngresos.add(montoNormalizado);
+                igvVentas = igvVentas.add(igvNormalizado);
+                retenciones = retenciones.add(retencionNormalizada);
+                detracciones = detracciones.add(detraccionNormalizada);
+            }
         }
 
         // ==========================================
@@ -184,6 +191,7 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setTipoComprobante("TICKET/RECIBO");
             tx.setComprobante("S/D");
             tx.setEntidad(m.getResponsable());
+            tx.setEstado("COMPLETADA"); // Caja chica siempre es completada por ahora
 
             tx.setRuc("S/D");
             tx.setDescripcion(m.getMotivo());
@@ -192,8 +200,6 @@ public class FinanzasServiceImpl implements FinanzasService {
             tx.setSubTotal(orZero(m.getMonto()));
             tx.setIgv(BigDecimal.ZERO);
             tx.setTipoCambio(BigDecimal.ONE);
-
-            // ✅ AGREGANDO LOS NUEVOS CAMPOS
             tx.setRetencion(BigDecimal.ZERO);
             tx.setDetraccion(BigDecimal.ZERO);
             tx.setPercepcion(BigDecimal.ZERO);
