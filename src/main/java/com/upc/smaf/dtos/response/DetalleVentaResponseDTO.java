@@ -15,4 +15,8 @@ public class DetalleVentaResponseDTO {
     private BigDecimal precioUnitario;
     private BigDecimal descuento;
     private BigDecimal subtotal;
+
+    // ✅ ESTOS SON LOS DOS CAMPOS QUE TE FALTABAN PARA EL REPORTE
+    private BigDecimal valorBase;
+    private BigDecimal igv;
 }

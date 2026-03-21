@@ -18,34 +18,27 @@ public class VentaResponseDTO {
     private LocalDateTime fechaVenta;
     private String nombreCliente;
     private TipoCliente tipoCliente;
+    private EstadoVenta estado;
     private TipoPago tipoPago;
-
-    private BigDecimal montoInicial;
-    private Integer numeroCuotas;
-    private BigDecimal montoCuota;
-    private BigDecimal saldoPendiente;
-
-    private String moneda;
-    private BigDecimal tipoCambio;
 
     private String tipoDocumento;
     private String numeroDocumento;
-
-    // --- NUEVO: RETENCIÓN Y DETRACCIÓN ---
-    private BigDecimal retencion;
-    private BigDecimal detraccion;
+    private String moneda;
 
     private BigDecimal subtotal;
     private BigDecimal igv;
     private BigDecimal total;
+
+    // ✅ CAMPOS DE IMPUESTOS Y TOTAL NETO (Calculado en Backend)
+    private BigDecimal retencion;
+    private BigDecimal detraccion;
+    private BigDecimal totalNeto;
+
+    private BigDecimal saldoPendiente;
     private String notas;
-    private EstadoVenta estado;
 
     private List<DetalleVentaResponseDTO> detalles;
     private List<PagoResponseDTO> pagos;
-
-    private LocalDateTime fechaCreacion;
-    private LocalDateTime fechaActualizacion;
 
     @Data
     public static class PagoResponseDTO {

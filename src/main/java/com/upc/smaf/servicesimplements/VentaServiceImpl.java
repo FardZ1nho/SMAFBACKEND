@@ -50,7 +50,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoDocumento(request.getTipoDocumento());
         venta.setNumeroDocumento(request.getNumeroDocumento());
 
-        // Mapeamos retención y detracción
         venta.setRetencion(request.getRetencion() != null ? request.getRetencion() : BigDecimal.ZERO);
         venta.setDetraccion(request.getDetraccion() != null ? request.getDetraccion() : BigDecimal.ZERO);
 
@@ -114,7 +113,6 @@ public class VentaServiceImpl implements VentaService {
 
         venta.setMontoInicial(totalPagadoNormalizado);
 
-        // Lo que el cliente REALMENTE DEBE PAGAR es el Total menos la Retención y Detracción
         BigDecimal montoRealAPagar = totalVenta.subtract(venta.getRetencion()).subtract(venta.getDetraccion());
 
         if (venta.getTipoPago() == TipoPago.CONTADO) {
@@ -185,7 +183,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
-        // ✅ CORRECCIÓN EXTRA: Guardar comprobante y cuotas al crear el borrador
         venta.setTipoDocumento(request.getTipoDocumento());
         venta.setNumeroDocumento(request.getNumeroDocumento());
         venta.setNumeroCuotas(request.getNumeroCuotas());
@@ -256,7 +253,6 @@ public class VentaServiceImpl implements VentaService {
         venta.setTipoCambio(request.getTipoCambio());
         venta.setTipoPago(request.getTipoPago());
 
-        // ✅ CORRECCIÓN PRINCIPAL: Actualizar comprobante y cuotas
         venta.setTipoDocumento(request.getTipoDocumento());
         venta.setNumeroDocumento(request.getNumeroDocumento());
         venta.setNumeroCuotas(request.getNumeroCuotas());
@@ -496,18 +492,39 @@ public class VentaServiceImpl implements VentaService {
         dto.setSaldoPendiente(venta.getSaldoPendiente());
         dto.setNotas(venta.getNotas());
 
+        // Mapeo de impuestos globales
         dto.setRetencion(venta.getRetencion());
         dto.setDetraccion(venta.getDetraccion());
+
+        // Total Neto calculado por el Backend
+        BigDecimal retencionVal = venta.getRetencion() != null ? venta.getRetencion() : BigDecimal.ZERO;
+        BigDecimal detraccionVal = venta.getDetraccion() != null ? venta.getDetraccion() : BigDecimal.ZERO;
+        BigDecimal totalNeto = venta.getTotal().subtract(retencionVal).subtract(detraccionVal);
+        dto.setTotalNeto(totalNeto);
 
         List<DetalleVentaResponseDTO> detDTOs = venta.getDetalles().stream().map(d -> {
             DetalleVentaResponseDTO dd = new DetalleVentaResponseDTO();
             dd.setId(d.getId());
             dd.setProductoId(d.getProducto().getId());
             dd.setProductoNombre(d.getProducto().getNombre());
+
+            // ✅ MAPEANDO EL CÓDIGO DEL PRODUCTO (Requisito para SUNAT/Detalles)
+            dd.setProductoCodigo(d.getProducto().getCodigo());
+
             dd.setCantidad(d.getCantidad());
             dd.setPrecioUnitario(d.getPrecioUnitario());
             dd.setDescuento(d.getDescuento());
-            dd.setSubtotal(d.getSubtotal());
+
+            BigDecimal subtotalLinea = d.getSubtotal() != null ? d.getSubtotal() : BigDecimal.ZERO;
+            dd.setSubtotal(subtotalLinea);
+
+            // ✅ CÁLCULO DE VALOR BASE E IGV POR LÍNEA
+            BigDecimal valorBaseLinea = subtotalLinea.divide(new BigDecimal("1.18"), 2, RoundingMode.HALF_UP);
+            BigDecimal igvLinea = subtotalLinea.subtract(valorBaseLinea);
+
+            dd.setValorBase(valorBaseLinea);
+            dd.setIgv(igvLinea);
+
             return dd;
         }).collect(Collectors.toList());
         dto.setDetalles(detDTOs);
